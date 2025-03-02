@@ -1,5 +1,13 @@
-// Import Tauri API
-const { invoke } = window.__TAURI__.core;
+// Import modules
+import { invoke } from './tauri-bridge.js';
+import logger from './logger.js';
+import db from './database.js';
+import geminiAPI from './gemini-api.js';
+import settings from './settings.js';
+import { runStartupDiagnostics, attemptAutoFixes } from './diagnostics.js';
+
+// Initialize logger with enhanced debugging
+logger.info('Application starting with enhanced debugging');
 
 // DOM Elements
 const searchInput = document.getElementById('search-input');
@@ -16,6 +24,7 @@ const closeDialogBtn = document.getElementById('close-dialog-btn');
 const messagesContainer = document.getElementById('messages-container');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
 const conversationTags = document.getElementById('conversation-tags');
 const linkConversationBtn = document.getElementById('link-conversation-btn');
 const addTagBtn = document.getElementById('add-tag-btn');
@@ -28,8 +37,13 @@ const tagsFilterSelect = document.getElementById('tags-filter-select');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsDialog = document.getElementById('settings-dialog');
 const closeSettingsBtn = document.getElementById('close-settings-btn');
+const closeSettingsBtnAlt = document.getElementById('close-settings-btn-alt');
 const apiKeyInput = document.getElementById('api-key-input');
 const saveApiKeyBtn = document.getElementById('save-api-key-btn');
+const bookmarkBtn = document.getElementById('bookmark-btn');
+const bookmarksDialog = document.getElementById('bookmarks-dialog');
+const closeBookmarksBtn = document.getElementById('close-bookmarks-btn');
+const bookmarksList = document.getElementById('bookmarks-list');
 
 // Templates
 const conversationItemTemplate = document.getElementById('conversation-item-template');
@@ -48,6 +62,7 @@ let simulation = null;
 let transform = { x: 0, y: 0, k: 1 }; // For zoom and pan
 let apiKey = ''; // Store the Gemini API key
 let showTagsOnly = false; // Toggle to show only tagged conversations
+let isProcessingMessage = false; // Flag to track if a message is being processed
 
 // D3 Selections
 let svg = d3.select('#mind-map-svg');
@@ -56,22 +71,25 @@ let g = d3.select('#map-container');
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initializeApp);
 sidebarToggle.addEventListener('click', toggleSidebar);
-newConversationBtn.addEventListener('click', createNewConversation);
-addConvoBtn.addEventListener('click', createNewConversation);
-searchInput.addEventListener('input', searchConversations);
-linkConversationBtn.addEventListener('click', showLinkConversationDialog);
-addTagBtn.addEventListener('click', showAddTagDialog);
-editTitleBtn.addEventListener('click', showEditTitleDialog);
-closeDialogBtn.addEventListener('click', closeConversationDialog);
-messageForm.addEventListener('submit', sendMessage);
-listViewBtn.addEventListener('click', toggleSidebar);
-zoomInBtn.addEventListener('click', () => zoomMap(1.2));
-zoomOutBtn.addEventListener('click', () => zoomMap(0.8));
-resetViewBtn.addEventListener('click', resetMapView);
-tagsFilterSelect.addEventListener('change', filterConversationsByTag);
+if (newConversationBtn) newConversationBtn.addEventListener('click', createNewConversation);
+if (addConvoBtn) addConvoBtn.addEventListener('click', createNewConversation);
+if (searchInput) searchInput.addEventListener('input', searchConversations);
+if (linkConversationBtn) linkConversationBtn.addEventListener('click', showLinkConversationDialog);
+if (addTagBtn) addTagBtn.addEventListener('click', showAddTagDialog);
+if (editTitleBtn) editTitleBtn.addEventListener('click', showEditTitleDialog);
+if (closeDialogBtn) closeDialogBtn.addEventListener('click', closeConversationDialog);
+if (messageForm) messageForm.addEventListener('submit', sendMessage);
+if (listViewBtn) listViewBtn.addEventListener('click', toggleSidebar);
+if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomMap(1.2));
+if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomMap(0.8));
+if (resetViewBtn) resetViewBtn.addEventListener('click', resetMapView);
+if (tagsFilterSelect) tagsFilterSelect.addEventListener('change', filterConversationsByTag);
 if (settingsBtn) settingsBtn.addEventListener('click', showSettingsDialog);
 if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', hideSettingsDialog);
+if (closeSettingsBtnAlt) closeSettingsBtnAlt.addEventListener('click', hideSettingsDialog);
 if (saveApiKeyBtn) saveApiKeyBtn.addEventListener('click', saveApiKey);
+if (bookmarkBtn) bookmarkBtn.addEventListener('click', toggleBookmarksDialog);
+if (closeBookmarksBtn) closeBookmarksBtn.addEventListener('click', hideBookmarksDialog);
 
 // Zoom behavior
 const zoom = d3.zoom()
@@ -83,44 +101,139 @@ const zoom = d3.zoom()
 
 svg.call(zoom);
 
-// Initialize Application
+// Initialize Application with enhanced diagnostics
 async function initializeApp() {
     try {
+        logger.info("Initializing application with enhanced debugging...");
+        
+        // Run startup diagnostics first
+        logger.info("Running startup diagnostics...");
+        await runStartupDiagnostics();
+        
+        // Attempt to fix any issues automatically
+        await attemptAutoFixes();
+        
         // Initialize database tables if they don't exist
+        logger.info("Initializing database tables...");
         await initializeDatabase();
         
         // Load API key from local storage if available
-        loadApiKey();
+        logger.info("Loading API key...");
+        await loadApiKey();
         
         // Load conversations
+        logger.info("Loading conversations...");
         await loadConversations();
         
         // Load conversation links
+        logger.info("Loading conversation links...");
         await loadConversationLinks();
         
         // Load all tags for filter
+        logger.info("Loading tags...");
         await loadAllTags();
         
         // Load tag links
+        logger.info("Loading tag links...");
         await loadTagLinks();
         
         // Initialize mind map
+        logger.info("Initializing mind map...");
         initializeMindMap();
         
+        // Verify critical DOM elements are setup properly
+        verifyDomElements();
+        
+        // Verify critical event listeners
+        verifyEventListeners();
+        
         // Auto-resize message input
-        messageInput.addEventListener('input', () => {
-            messageInput.style.height = 'auto';
-            messageInput.style.height = messageInput.scrollHeight + 'px';
-        });
+        if (messageInput) {
+            messageInput.addEventListener('input', () => {
+                messageInput.style.height = 'auto';
+                messageInput.style.height = messageInput.scrollHeight + 'px';
+            });
+            logger.debug('Added auto-resize to message input');
+        } else {
+            logger.warn('Message input element not found');
+        }
+        
+        logger.info("Application initialized successfully!");
     } catch (error) {
-        console.error('Error initializing app:', error);
-        showErrorNotification('Failed to initialize the application');
+        logger.error('Error initializing app:', error);
+        showErrorNotification('Failed to initialize the application: ' + error.message);
     }
+}
+
+// Verify critical DOM elements
+function verifyDomElements() {
+    logger.info('Verifying critical DOM elements...');
+    
+    // Check critical buttons
+    const criticalButtons = [
+        { id: 'new-conversation-btn', name: 'New Conversation Button' },
+        { id: 'add-convo-btn', name: 'Add Conversation Button' },
+        { id: 'send-btn', name: 'Send Button' }
+    ];
+    
+    criticalButtons.forEach(button => {
+        const element = document.getElementById(button.id);
+        if (!element) {
+            logger.error(`Critical button missing: ${button.name} (id: ${button.id})`);
+        } else {
+            logger.debug(`Found critical button: ${button.name}`);
+            
+            // Check if button is properly visible and enabled
+            const style = window.getComputedStyle(element);
+            if (style.display === 'none' || style.visibility === 'hidden' || element.disabled) {
+                logger.warn(`Button ${button.id} may be hidden or disabled:`, {
+                    display: style.display,
+                    visibility: style.visibility,
+                    disabled: element.disabled
+                });
+            }
+        }
+    });
+}
+
+// Verify critical event listeners
+function verifyEventListeners() {
+    logger.info('Verifying critical event listeners...');
+    
+    // Verify new conversation buttons
+    if (newConversationBtn) {
+        // Re-attach for safety
+        newConversationBtn.removeEventListener('click', createNewConversation);
+        newConversationBtn.addEventListener('click', createNewConversation);
+        logger.debug('Re-attached event listener to newConversationBtn');
+    }
+    
+    if (addConvoBtn) {
+        // Re-attach for safety
+        addConvoBtn.removeEventListener('click', createNewConversation);
+        addConvoBtn.addEventListener('click', createNewConversation);
+        logger.debug('Re-attached event listener to addConvoBtn');
+    }
+    
+    // Verify message form submit
+    if (messageForm) {
+        // Re-attach for safety
+        messageForm.removeEventListener('submit', sendMessage);
+        messageForm.addEventListener('submit', sendMessage);
+        logger.debug('Re-attached event listener to messageForm');
+    }
+    
+    // Expose key functions for diagnostics
+    window.createNewConversation = createNewConversation;
+    window.sendMessage = sendMessage;
+    window.openConversationDialog = openConversationDialog;
 }
 
 // Initialize Database
 async function initializeDatabase() {
     try {
+        console.log("Creating database tables if they don't exist...");
+        
         // Create Conversations table
         await invoke('create_table', {
             query: `
@@ -128,7 +241,8 @@ async function initializeDatabase() {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    bookmarked INTEGER DEFAULT 0
                 )
             `
         });
@@ -201,7 +315,7 @@ async function initializeDatabase() {
         console.log('Database initialized successfully');
     } catch (error) {
         console.error('Error initializing database:', error);
-        throw new Error('Failed to initialize database');
+        throw new Error('Failed to initialize database: ' + error.message);
     }
 }
 
@@ -266,9 +380,134 @@ function hideSettingsDialog() {
     settingsDialog.classList.remove('active');
 }
 
+// Toggle Bookmarks Dialog
+async function toggleBookmarksDialog() {
+    if (bookmarksDialog.classList.contains('active')) {
+        hideBookmarksDialog();
+    } else {
+        await loadBookmarkedConversations();
+        bookmarksDialog.classList.add('active');
+    }
+}
+
+// Hide Bookmarks Dialog
+function hideBookmarksDialog() {
+    bookmarksDialog.classList.remove('active');
+}
+
+// Load Bookmarked Conversations
+async function loadBookmarkedConversations() {
+    try {
+        const result = await invoke('read_query', {
+            query: `
+                SELECT 
+                    id, title, created_at, updated_at,
+                    (SELECT text FROM Messages 
+                     WHERE conversation_id = Conversations.id 
+                     ORDER BY timestamp DESC LIMIT 1) as last_message
+                FROM Conversations
+                WHERE bookmarked = 1
+                ORDER BY updated_at DESC
+            `
+        });
+        
+        // Render bookmarks list
+        bookmarksList.innerHTML = '';
+        
+        if (result.length === 0) {
+            bookmarksList.innerHTML = '<div class="bookmark-empty-state">No bookmarked conversations yet</div>';
+            return;
+        }
+        
+        result.forEach(conv => {
+            const item = document.createElement('div');
+            item.className = 'conversation-item';
+            item.dataset.id = conv.id;
+            
+            const title = document.createElement('div');
+            title.className = 'conversation-title';
+            title.textContent = conv.title;
+            
+            const preview = document.createElement('div');
+            preview.className = 'conversation-preview';
+            preview.textContent = conv.last_message || 'No messages yet';
+            
+            const date = document.createElement('div');
+            date.className = 'conversation-date';
+            date.textContent = formatDate(new Date(conv.updated_at));
+            
+            item.appendChild(title);
+            item.appendChild(preview);
+            item.appendChild(date);
+            
+            item.addEventListener('click', () => {
+                hideBookmarksDialog();
+                openConversationDialog(conv.id);
+            });
+            
+            bookmarksList.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Error loading bookmarked conversations:', error);
+        showErrorNotification('Failed to load bookmarks');
+    }
+}
+
+// Toggle Bookmark Status
+async function toggleBookmark(conversationId) {
+    try {
+        // Get current bookmark status
+        const result = await invoke('read_query', {
+            query: `
+                SELECT bookmarked FROM Conversations
+                WHERE id = ?
+            `,
+            parameters: [conversationId.toString()]
+        });
+        
+        if (result.length > 0) {
+            const currentStatus = result[0].bookmarked;
+            const newStatus = currentStatus ? 0 : 1;
+            
+            // Update bookmark status
+            await invoke('write_query', {
+                query: `
+                    UPDATE Conversations
+                    SET bookmarked = ?
+                    WHERE id = ?
+                `,
+                parameters: [newStatus.toString(), conversationId.toString()]
+            });
+            
+            // Show confirmation
+            const message = newStatus 
+                ? 'Conversation bookmarked' 
+                : 'Bookmark removed';
+            showNotification(message);
+            
+            // Update bookmark button if needed
+            if (document.querySelector('.bookmark-status-btn')) {
+                const btn = document.querySelector('.bookmark-status-btn i');
+                if (newStatus) {
+                    btn.classList.remove('far');
+                    btn.classList.add('fas');
+                } else {
+                    btn.classList.remove('fas');
+                    btn.classList.add('far');
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error toggling bookmark:', error);
+        showErrorNotification('Failed to update bookmark');
+    }
+}
+
 // Load Conversations
 async function loadConversations() {
     try {
+        console.log("Loading conversations from database...");
+        
         const result = await invoke('read_query', {
             query: `
                 SELECT 
@@ -276,6 +515,7 @@ async function loadConversations() {
                     c.title, 
                     c.created_at, 
                     c.updated_at,
+                    c.bookmarked,
                     (SELECT text FROM Messages 
                      WHERE conversation_id = c.id 
                      ORDER BY timestamp DESC LIMIT 1) as last_message
@@ -284,11 +524,12 @@ async function loadConversations() {
             `
         });
         
+        console.log("Loaded conversations:", result);
         conversations = result;
         renderConversationList(conversations);
     } catch (error) {
         console.error('Error loading conversations:', error);
-        showErrorNotification('Failed to load conversations');
+        showErrorNotification('Failed to load conversations: ' + error.message);
     }
 }
 
@@ -335,6 +576,8 @@ async function loadTagLinks() {
 
 // Populate Tags Filter Dropdown
 function populateTagsFilter(tags) {
+    if (!tagsFilterSelect) return;
+    
     // Clear current options except the first one
     while (tagsFilterSelect.options.length > 1) {
         tagsFilterSelect.remove(1);
@@ -369,6 +612,7 @@ async function filterConversationsByTag() {
                     c.title, 
                     c.created_at, 
                     c.updated_at,
+                    c.bookmarked,
                     (SELECT text FROM Messages 
                      WHERE conversation_id = c.id 
                      ORDER BY timestamp DESC LIMIT 1) as last_message
@@ -483,6 +727,7 @@ function updateMindMapVisualization(nodes, links) {
         id: conv.id,
         title: conv.title,
         lastUpdate: conv.updated_at,
+        bookmarked: conv.bookmarked,
         type: 'conversation'
     }));
     
@@ -537,25 +782,57 @@ function updateMindMapVisualization(nodes, links) {
             return d.title.length > 15 ? d.title.substring(0, 15) + '...' : d.title;
         });
     
+    // Add bookmark indicators
+    node.filter(d => d.bookmarked)
+        .append('text')
+        .attr('class', 'bookmark-indicator')
+        .attr('x', 25)
+        .attr('y', -30)
+        .attr('font-size', '14px')
+        .attr('fill', '#FFD700')
+        .attr('text-anchor', 'middle')
+        .text('★');
+    
     // Add drag behavior
     node.call(d3.drag()
         .on('start', dragstarted)
         .on('drag', dragged)
         .on('end', dragended));
     
-    // Add tag indicators to conversations with tags
+    // Add tag indicators and tag names to conversations with tags
     node.each(function(d) {
         if (d.type === 'conversation') {
             // Check if this conversation has tags
             invoke('read_query', {
                 query: `
-                    SELECT COUNT(*) as tag_count
+                    SELECT name
                     FROM Tags
                     WHERE conversation_id = ?
                 `,
                 parameters: [d.id.toString()]
             }).then(result => {
-                if (result[0].tag_count > 0) {
+                if (result.length > 0) {
+                    // Add tag names below node
+                    const tagNames = d3.select(this).append('g')
+                        .attr('class', 'tag-names')
+                        .attr('transform', 'translate(0, 55)');
+                    
+                    // Show up to 3 tags, with ellipsis if more
+                    const displayTags = result.slice(0, 3);
+                    displayTags.forEach((tag, i) => {
+                        tagNames.append('text')
+                            .attr('y', i * 15)
+                            .attr('text-anchor', 'middle')
+                            .text(`#${tag.name}`);
+                    });
+                    
+                    if (result.length > 3) {
+                        tagNames.append('text')
+                            .attr('y', 3 * 15)
+                            .attr('text-anchor', 'middle')
+                            .text('...');
+                    }
+                    
                     // Add a small tag indicator
                     d3.select(this).append('circle')
                         .attr('class', 'tag-indicator')
@@ -575,7 +852,7 @@ function updateMindMapVisualization(nodes, links) {
                         .attr('dominant-baseline', 'central')
                         .attr('font-size', '10px')
                         .attr('fill', 'white')
-                        .text(result[0].tag_count);
+                        .text(result.length);
                 }
             }).catch(error => {
                 console.error('Error checking for tags:', error);
@@ -681,13 +958,15 @@ function zoomToNode(nodeId) {
 // Open Conversation Dialog
 async function openConversationDialog(conversationId) {
     try {
+        console.log(`Opening conversation dialog for ID: ${conversationId}`);
+        
         // Update current conversation ID
         currentConversationId = conversationId;
         
         // Get conversation details
         const result = await invoke('read_query', {
             query: `
-                SELECT id, title, created_at, updated_at
+                SELECT id, title, created_at, updated_at, bookmarked
                 FROM Conversations
                 WHERE id = ?
             `,
@@ -700,6 +979,33 @@ async function openConversationDialog(conversationId) {
             // Update dialog title
             dialogTitle.textContent = conversation.title;
             
+            // Add bookmark button if not present
+            if (!document.querySelector('.bookmark-status-btn')) {
+                const bookmarkStatusBtn = document.createElement('button');
+                bookmarkStatusBtn.className = 'dialog-action-btn bookmark-status-btn';
+                bookmarkStatusBtn.title = conversation.bookmarked ? 'Remove Bookmark' : 'Bookmark';
+                
+                const bookmarkIcon = document.createElement('i');
+                bookmarkIcon.className = conversation.bookmarked ? 'fas fa-bookmark' : 'far fa-bookmark';
+                
+                bookmarkStatusBtn.appendChild(bookmarkIcon);
+                bookmarkStatusBtn.addEventListener('click', () => toggleBookmark(conversationId));
+                
+                // Insert before the close button
+                const actions = document.querySelector('.dialog-actions');
+                actions.insertBefore(bookmarkStatusBtn, document.getElementById('close-dialog-btn'));
+            } else {
+                // Update existing bookmark button
+                const btn = document.querySelector('.bookmark-status-btn i');
+                if (conversation.bookmarked) {
+                    btn.className = 'fas fa-bookmark';
+                    document.querySelector('.bookmark-status-btn').title = 'Remove Bookmark';
+                } else {
+                    btn.className = 'far fa-bookmark';
+                    document.querySelector('.bookmark-status-btn').title = 'Bookmark';
+                }
+            }
+            
             // Load messages for this conversation
             await loadMessages(conversationId);
             
@@ -711,10 +1017,13 @@ async function openConversationDialog(conversationId) {
             
             // Show dialog
             conversationDialog.classList.add('active');
+        } else {
+            console.error(`No conversation found with ID: ${conversationId}`);
+            showErrorNotification(`Conversation not found: ${conversationId}`);
         }
     } catch (error) {
         console.error('Error opening conversation dialog:', error);
-        showErrorNotification('Failed to open conversation');
+        showErrorNotification('Failed to open conversation: ' + error.message);
     }
 }
 
@@ -766,6 +1075,8 @@ function toggleSidebar() {
 
 // Render Conversation List
 function renderConversationList(conversationsToRender) {
+    if (!conversationList) return;
+    
     // Clear current list
     conversationList.innerHTML = '';
     
@@ -793,6 +1104,16 @@ function renderConversationList(conversationsToRender) {
         // Add active class if this is the current conversation
         if (conversation.id === currentConversationId) {
             conversationItem.classList.add('active');
+        }
+        
+        // Add bookmark indicator if bookmarked
+        if (conversation.bookmarked) {
+            const bookmarkIndicator = document.createElement('span');
+            bookmarkIndicator.className = 'bookmark-indicator';
+            bookmarkIndicator.innerHTML = '★';
+            bookmarkIndicator.style.color = '#FFD700';
+            bookmarkIndicator.style.marginLeft = '5px';
+            conversationItem.querySelector('.conversation-title').appendChild(bookmarkIndicator);
         }
         
         // Add tag indicators to the conversation item
@@ -865,18 +1186,21 @@ function formatDate(date) {
 // Create New Conversation
 async function createNewConversation() {
     try {
+        console.log("Creating new conversation...");
+        
         const title = `New Conversation ${new Date().toLocaleString()}`;
         
         const result = await invoke('write_query', {
             query: `
-                INSERT INTO Conversations (title, created_at, updated_at)
-                VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO Conversations (title, created_at, updated_at, bookmarked)
+                VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
             `,
             parameters: [title]
         });
         
         // Get the ID of the new conversation
         const newConversationId = result.lastInsertRowid;
+        console.log(`Created new conversation with ID: ${newConversationId}`);
         
         // Refresh the conversation list
         await loadConversations();
@@ -889,7 +1213,7 @@ async function createNewConversation() {
         openConversationDialog(newConversationId);
     } catch (error) {
         console.error('Error creating new conversation:', error);
-        showErrorNotification('Failed to create a new conversation');
+        showErrorNotification('Failed to create a new conversation: ' + error.message);
     }
 }
 
@@ -916,6 +1240,8 @@ async function loadMessages(conversationId) {
 
 // Render Messages
 function renderMessages(messagesToRender) {
+    if (!messagesContainer) return;
+    
     // Clear current messages
     messagesContainer.innerHTML = '';
     
@@ -963,6 +1289,10 @@ function renderMessages(messagesToRender) {
 async function sendMessage(event) {
     event.preventDefault();
     
+    if (isProcessingMessage) {
+        return; // Prevent multiple submissions
+    }
+    
     if (!currentConversationId) {
         showErrorNotification('Please select a conversation first');
         return;
@@ -976,6 +1306,15 @@ async function sendMessage(event) {
     }
     
     try {
+        // Set processing flag
+        isProcessingMessage = true;
+        
+        // Change button state to waiting
+        if (window.handleButtonState) {
+            window.handleButtonState('waiting');
+        }
+        sendBtn.disabled = true;
+        
         // Save user message to database
         await invoke('write_query', {
             query: `
@@ -1007,13 +1346,35 @@ async function sendMessage(event) {
         
         // Refresh conversation list and mind map
         await loadConversations();
+        
+        // Change button state to activated
+        if (window.handleButtonState) {
+            window.handleButtonState('activated');
+        }
+        
+        // After a delay, reset button state
+        setTimeout(() => {
+            if (window.handleButtonState) {
+                window.handleButtonState('activate');
+            }
+            sendBtn.disabled = false;
+            isProcessingMessage = false;
+        }, 1500);
+        
     } catch (error) {
         console.error('Error sending message:', error);
-        showErrorNotification('Failed to send message');
+        showErrorNotification('Failed to send message: ' + error.message);
+        
+        // Reset button state
+        if (window.handleButtonState) {
+            window.handleButtonState('activate');
+        }
+        sendBtn.disabled = false;
+        isProcessingMessage = false;
     }
 }
 
-// Get AI Response
+// Get AI Response with Streaming
 async function getAIResponse(userMessage) {
     try {
         // Check if API key is available
@@ -1031,40 +1392,203 @@ async function getAIResponse(userMessage) {
             return;
         }
         
-        // In a real app, you'd call the Gemini API here
-        // For now, we'll simulate a response
-        let simulatedResponse = `This is a simulated AI response to: "${userMessage}"`;
+        // Show loading state in UI
+        const loadingMessage = document.createElement('div');
+        loadingMessage.className = 'message ai loading';
+        loadingMessage.innerHTML = `
+            <div class="message-content">
+                <div class="typing-indicator">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+            </div>
+        `;
+        messagesContainer.appendChild(loadingMessage);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
         
-        // Add some delay to simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Save AI response to database
-        await invoke('write_query', {
+        // Prepare previous messages context if any
+        const previousMessages = await invoke('read_query', {
             query: `
-                INSERT INTO Messages (conversation_id, sender, text, timestamp)
-                VALUES (?, 'ai', ?, CURRENT_TIMESTAMP)
-            `,
-            parameters: [currentConversationId.toString(), simulatedResponse]
-        });
-        
-        // Update conversation's updated_at timestamp
-        await invoke('write_query', {
-            query: `
-                UPDATE Conversations
-                SET updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SELECT sender, text
+                FROM Messages
+                WHERE conversation_id = ?
+                ORDER BY timestamp ASC
+                LIMIT 10
             `,
             parameters: [currentConversationId.toString()]
         });
         
-        // Reload messages
-        await loadMessages(currentConversationId);
+        // Format messages for Gemini API
+        const contents = [];
         
-        // Refresh conversation list
-        await loadConversations();
+        // Add previous messages to the context
+        previousMessages.forEach(msg => {
+            contents.push({
+                role: msg.sender.toLowerCase() === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }]
+            });
+        });
+        
+        // Add current user message if it's not already included
+        const lastMessage = previousMessages[previousMessages.length - 1];
+        if (!lastMessage || lastMessage.text !== userMessage || lastMessage.sender.toLowerCase() !== 'user') {
+            contents.push({
+                role: 'user',
+                parts: [{ text: userMessage }]
+            });
+        }
+        
+        // Create a new message in the database to store the AI response
+        const messageResult = await invoke('write_query', {
+            query: `
+                INSERT INTO Messages (conversation_id, sender, text, timestamp)
+                VALUES (?, 'ai', '', CURRENT_TIMESTAMP)
+            `,
+            parameters: [currentConversationId.toString()]
+        });
+        
+        const aiMessageId = messageResult.lastInsertRowid;
+        
+        try {
+            // Call Gemini API with streaming
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=${apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ contents })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status} ${response.statusText}`);
+            }
+            
+            // Remove loading message
+            messagesContainer.removeChild(loadingMessage);
+            
+            // Create actual message for streaming content
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message ai';
+            messageElement.dataset.id = aiMessageId;
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'actions';
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'action-btn edit-message-btn';
+            editBtn.title = 'Edit';
+            editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'action-btn delete-message-btn';
+            deleteBtn.title = 'Delete';
+            deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            
+            actionsDiv.appendChild(editBtn);
+            actionsDiv.appendChild(deleteBtn);
+            
+            const messageTimestamp = document.createElement('div');
+            messageTimestamp.className = 'message-timestamp';
+            messageTimestamp.textContent = formatDate(new Date());
+            
+            messageElement.appendChild(messageContent);
+            messageElement.appendChild(actionsDiv);
+            messageElement.appendChild(messageTimestamp);
+            messagesContainer.appendChild(messageElement);
+            
+            // Add event listeners for edit and delete
+            editBtn.addEventListener('click', () => {
+                editMessage(aiMessageId);
+            });
+            
+            deleteBtn.addEventListener('click', () => {
+                deleteMessage(aiMessageId);
+            });
+            
+            // Process the stream
+            const reader = response.body.getReader();
+            let fullResponse = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                // Convert the chunk to text
+                const chunk = new TextDecoder().decode(value);
+                
+                // Parse the SSE data to extract the text
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+                        try {
+                            const data = JSON.parse(line.substring(6));
+                            if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+                                const textChunk = data.candidates[0].content.parts[0].text;
+                                fullResponse += textChunk;
+                                
+                                // Update the message content
+                                messageContent.textContent = fullResponse;
+                                
+                                // Scroll to the bottom
+                                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e);
+                        }
+                    }
+                }
+            }
+            
+            // Update the message in the database with the full response
+            await invoke('write_query', {
+                query: `
+                    UPDATE Messages
+                    SET text = ?
+                    WHERE id = ?
+                `,
+                parameters: [fullResponse, aiMessageId.toString()]
+            });
+        } catch (apiError) {
+            console.error('Error calling Gemini API:', apiError);
+            
+            // Remove loading message if it exists
+            if (messagesContainer.contains(loadingMessage)) {
+                messagesContainer.removeChild(loadingMessage);
+            }
+            
+            // Create error message
+            await invoke('write_query', {
+                query: `
+                    UPDATE Messages
+                    SET text = ?
+                    WHERE id = ?
+                `,
+                parameters: [`Error calling Gemini API: ${apiError.message}`, aiMessageId.toString()]
+            });
+            
+            await loadMessages(currentConversationId);
+            showErrorNotification(`API Error: ${apiError.message}`);
+        } finally {
+            // Update conversation's updated_at timestamp
+            await invoke('write_query', {
+                query: `
+                    UPDATE Conversations
+                    SET updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                `,
+                parameters: [currentConversationId.toString()]
+            });
+            
+            // Refresh conversation list
+            await loadConversations();
+        }
     } catch (error) {
         console.error('Error getting AI response:', error);
-        showErrorNotification('Failed to get AI response');
+        showErrorNotification('Failed to get AI response: ' + error.message);
     }
 }
 
@@ -1190,6 +1714,7 @@ async function searchConversations() {
                     c.title, 
                     c.created_at, 
                     c.updated_at,
+                    c.bookmarked,
                     (SELECT text FROM Messages 
                      WHERE conversation_id = c.id 
                      ORDER BY timestamp DESC LIMIT 1) as last_message
@@ -1239,6 +1764,8 @@ async function loadTags(conversationId) {
 
 // Render Tags
 function renderTags(tagsToRender) {
+    if (!conversationTags) return;
+    
     // Clear current tags
     conversationTags.innerHTML = '';
     
@@ -1498,7 +2025,7 @@ async function showLinkConversationDialog() {
         // Get all conversations except the current one
         const result = await invoke('read_query', {
             query: `
-                SELECT id, title
+                SELECT id, title, bookmarked
                 FROM Conversations
                 WHERE id != ?
                 ORDER BY updated_at DESC
@@ -1529,7 +2056,14 @@ async function showLinkConversationDialog() {
             const convItem = document.createElement('div');
             convItem.className = 'conversation-link-item';
             convItem.dataset.id = conv.id;
-            convItem.textContent = conv.title;
+            
+            // Add bookmark indicator if bookmarked
+            let titleText = conv.title;
+            if (conv.bookmarked) {
+                titleText = `★ ${titleText}`;
+            }
+            
+            convItem.textContent = titleText;
             
             // Check if already linked
             const isLinked = conversationLinks.some(

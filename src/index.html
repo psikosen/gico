@@ -6,11 +6,46 @@
     <title>AI Conversation Manager</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script type="module" src="/logger.js" defer></script>
+    <script type="module" src="/diagnostics.js" defer></script>
     <script type="module" src="/main.js" defer></script>
+    <script type="module" src="/button.js" defer></script>
+    
+    <!-- Error handler to catch and log runtime errors -->
+    <script>
+    window.addEventListener('error', function(event) {
+        console.error('Uncaught error:', event.error);
+        if (window.logger) {
+            window.logger.fatal('Uncaught runtime error', {
+                message: event.message,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+                error: event.error ? event.error.toString() : 'unknown'
+            });
+            
+            // Attempt to recover automatically
+            if (window.attemptFixes) {
+                window.attemptFixes().then(() => {
+                    console.log('Attempted automated recovery after error');
+                });
+            }
+        }
+    });
+    
+    // Mark app as debugging-enabled
+    window.GICO_DEBUG_MODE = true;
+    </script>
 </head>
 <body>
     <div class="background-overlay"></div>
+    
+    <!-- Bookmark Button -->
+    <button class="bookmark-btn" id="bookmark-btn" title="Bookmarks">
+        <i class="fas fa-bookmark"></i>
+    </button>
     
     <div class="app-container">
         <!-- Sidebar - Now a toggleable panel -->
@@ -96,6 +131,9 @@
                 <button class="dialog-action-btn" id="link-conversation-btn" title="Link Conversation">
                     <i class="fas fa-link"></i>
                 </button>
+                <button class="dialog-action-btn delete-action-btn" id="delete-conversation-btn" title="Delete Conversation">
+                    <i class="fas fa-trash"></i>
+                </button>
                 <button class="dialog-action-btn" id="close-dialog-btn" title="Close">
                     <i class="fas fa-times"></i>
                 </button>
@@ -116,8 +154,23 @@
         <div class="chat-input-container">
             <form class="chat-input-form" id="message-form">
                 <textarea class="chat-input" id="message-input" placeholder="Type your message..." rows="1"></textarea>
-                <button type="submit" class="send-btn">
-                    <i class="fas fa-paper-plane"></i>
+                <button type="submit" class="btn activate" id="send-btn">
+                    <div class="btn__activate">
+                        <div class="icon">
+                            <i class="fas fa-paper-plane"></i>
+                        </div>
+                        <div class="label">Send</div>
+                    </div>
+                    <div class="btn__waiting">
+                        <div class="icon">
+                            <div class="loader"></div>
+                        </div>
+                        <div class="label">Sending...</div>
+                    </div>
+                    <div class="btn__activated">
+                        <div class="icon"><i class="fas fa-check"></i></div>
+                        <div class="label">Sent</div>
+                    </div>
                 </button>
             </form>
         </div>
@@ -143,7 +196,21 @@
         
         <div class="settings-buttons">
             <button id="save-api-key-btn" class="settings-btn settings-save-btn">Save Settings</button>
-            <button id="close-settings-btn" class="settings-btn settings-cancel-btn">Cancel</button>
+            <button id="close-settings-btn-alt" class="settings-btn settings-cancel-btn">Cancel</button>
+        </div>
+    </div>
+    
+    <!-- Bookmarks Dialog -->
+    <div class="bookmarks-dialog" id="bookmarks-dialog">
+        <div class="bookmarks-header">
+            <div class="bookmarks-title">Bookmarked Conversations</div>
+            <button class="dialog-action-btn" id="close-bookmarks-btn" title="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="bookmarks-list" id="bookmarks-list">
+            <!-- Bookmarked conversations will be shown here -->
         </div>
     </div>
     

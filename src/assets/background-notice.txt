@@ -1,0 +1,4 @@
+Note: Please add a background image file named 'background.jpg' in this directory.
+
+For the glassmorphic UI, a dark, slightly blurred abstract or gradient background works best.
+A dark blue or purple gradient with some abstract elements will enhance the visual appeal of the app.

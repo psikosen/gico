@@ -1,65 +1,60 @@
-# Interactive Conversation Manager (ICM)
+# GICO - Fixed Version
 
-A Tauri-based desktop application designed to manage AI-driven conversations using the Gemini API and storing data locally with SQLite. Features an innovative mind map visualization for intuitive navigation.
+This version of GICO has been updated to fix issues with:
+1. The Tauri API imports
+2. Database schema inconsistencies
+3. Button responsiveness
+4. Event listeners
 
-## Features
+## Important Changes
 
-- **Mind Map Interface**: Visual representation of conversations as interconnected nodes
-- **Glassmorphic UI**: Elegant, transparent user interface with blur effects
-- **Conversation Management**: Create, edit, delete, and link conversations
-- **API Integration**: Secure interaction with the Gemini API for real-time AI responses
-- **Local Data Persistence**: Uses SQLite to store conversations, messages, tags, and links
-- **Additional Features**:
-  - Tagging system for organization
-  - Global and in-conversation search
-  - Interactive visualization with zoom, pan, and selection
+### Using the Correct Tauri API Pattern
 
-## Technologies Used
+Instead of using import statements that can fail in certain environments, this version uses:
 
-- **Frontend**: Vanilla JavaScript with D3.js for visualization
-- **Backend**: Rust with Tauri framework
-- **Database**: SQLite for local data storage
-- **Visualization**: D3.js force-directed graph layout
-
-## Architecture
-
-### Frontend
-
-- Renders the glassmorphic UI and mind map visualization
-- Handles user interactions and graph manipulation
-- Provides dynamic conversation viewing and editing
-
-### Backend
-
-- Manages business logic, including database interactions
-- Handles error logic for database and API calls
-- Implements SQLite integration for persistent storage
-
-### Database Schema
-
-- **Conversations**: Stores conversation metadata
-- **Messages**: Stores individual messages
-- **ConversationLinks**: Manages relationships between conversations
-- **Tags**: Organizes conversations with user-defined tags
-
-## Setup and Installation
-
-1. Ensure you have Rust and Node.js installed
-2. Clone the repository
-3. Navigate to the project directory
-4. Run `npm install` to install frontend dependencies
-5. Run `cargo tauri dev` to start the application in development mode
-
-## Building for Production
-
-```bash
-cargo tauri build
+```javascript
+// Access Tauri API directly from window object
+import { invoke } from './tauri-bridge.js';
 ```
 
-## Contributing
+This ensures compatibility regardless of how the app is bundled or served.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+### Fixed Database Schema
 
-## License
+The application now uses a consistent schema for the Conversations table, including:
+- `id`
+- `title`
+- `created_at`
+- `updated_at`
+- `bookmarked`
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Enhanced Logging
+
+Comprehensive logging has been added throughout the application to make troubleshooting easier.
+
+### Diagnostic Tools
+
+New diagnostic functions are available in the browser console:
+- `window.runDiagnostics()` - Run all diagnostics
+- `window.attemptFixes()` - Attempt to fix common issues
+- `window.diagnoseSendButton()` - Check the send button specifically
+
+## Known Issues
+
+If you still encounter issues, try these steps:
+
+1. **Button Issues**: Make sure the send button properly cycles through states (activate → waiting → activated).
+   - Use `window.diagnoseSendButton()` for diagnostics.
+
+2. **Database Errors**: If you see schema errors, clear your database or reinstall the app.
+
+3. **Event Listeners**: If clicks don't register, use `window.attemptFixes()` to repair listeners.
+
+## Development Guide
+
+For developers making changes:
+
+1. Always use the `invoke` function from `tauri-bridge.js`
+2. Be careful with database schema changes
+3. Use the logger for debugging: `logger.debug('message', {...data})` 
+4. Test all buttons after making changes

@@ -1,7 +1,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::State; 
 
 // Define the database connection state
 struct DbState(Mutex<Connection>);
