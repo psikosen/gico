@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Conversation Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script type="module" src="/main.js" defer></script>
+</head>
+<body>
+    <div class="background-overlay"></div>
+    
+    <div class="app-container">
+        <!-- Sidebar - Now a toggleable panel -->
+        <div class="sidebar collapsed" id="sidebar">
+            <div class="sidebar-toggle" id="sidebar-toggle">
+                <i class="fas fa-chevron-right"></i>
+            </div>
+            
+            <div class="sidebar-header">
+                <h2 class="text-on-dark metallic-glow">Conversations</h2>
+            </div>
+            
+            <!-- Search Bar -->
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Search conversations...">
+            </div>
+            
+            <!-- New Conversation Button -->
+            <button class="new-conversation-btn" id="new-conversation-btn">
+                <i class="fas fa-plus"></i> New Conversation
+            </button>
+            
+            <!-- Tags Filter -->
+            <div class="tags-filter">
+                <select id="tags-filter-select">
+                    <option value="">Filter by tag</option>
+                </select>
+            </div>
+            
+            <!-- Conversation List -->
+            <div class="conversation-list" id="conversation-list">
+                <!-- Conversation items will be added here dynamically -->
+            </div>
+        </div>
+        
+        <!-- Main Content Area - Now the map view is the default -->
+        <div class="main-content">
+            <!-- Map Header -->
+            <div class="map-header">
+                <div class="map-title">Conversation Mind Map</div>
+                <div class="map-actions">
+                    <button class="map-action-btn" id="list-view-btn" title="Toggle List View">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button class="map-action-btn" id="add-convo-btn" title="Add Conversation">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="map-action-btn" id="zoom-in-btn" title="Zoom In">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <button class="map-action-btn" id="zoom-out-btn" title="Zoom Out">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <button class="map-action-btn" id="reset-view-btn" title="Reset View">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Map Content - Now the primary content -->
+            <div class="map-content" id="map-content">
+                <svg id="mind-map-svg" width="100%" height="100%">
+                    <g id="map-container"></g>
+                </svg>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Conversation Dialog -->
+    <div class="conversation-dialog" id="conversation-dialog">
+        <div class="dialog-header">
+            <div class="dialog-title" id="dialog-title">Conversation</div>
+            <div class="dialog-actions">
+                <button class="dialog-action-btn" id="edit-title-btn" title="Edit Title">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="dialog-action-btn" id="add-tag-btn" title="Add Tag">
+                    <i class="fas fa-tag"></i>
+                </button>
+                <button class="dialog-action-btn" id="link-conversation-btn" title="Link Conversation">
+                    <i class="fas fa-link"></i>
+                </button>
+                <button class="dialog-action-btn" id="close-dialog-btn" title="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Tags Display -->
+        <div class="tags-container" id="conversation-tags">
+            <!-- Tags will be added here dynamically -->
+        </div>
+        
+        <!-- Messages Container -->
+        <div class="messages-container" id="messages-container">
+            <!-- Messages will be added here dynamically -->
+        </div>
+        
+        <!-- Chat Input -->
+        <div class="chat-input-container">
+            <form class="chat-input-form" id="message-form">
+                <textarea class="chat-input" id="message-input" placeholder="Type your message..." rows="1"></textarea>
+                <button type="submit" class="send-btn">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Templates for dynamic content -->
+    <template id="conversation-item-template">
+        <div class="conversation-item" data-id="">
+            <div class="conversation-title"></div>
+            <div class="conversation-preview"></div>
+            <div class="conversation-date"></div>
+        </div>
+    </template>
+    
+    <template id="message-template">
+        <div class="message" data-id="">
+            <div class="message-content"></div>
+            <div class="actions">
+                <button class="action-btn edit-message-btn" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="action-btn delete-message-btn" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="message-timestamp"></div>
+        </div>
+    </template>
+    
+    <template id="tag-template">
+        <div class="tag" data-id="">
+            <span class="tag-text"></span>
+            <span class="tag-remove">×</span>
+        </div>
+    </template>
+</body>
+</html>
