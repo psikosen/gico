@@ -13,7 +13,8 @@ const state = {
     conversationLinks: [],
     allTags: [],
     apiKey: null,
-    isProcessingMessage: false
+    isProcessingMessage: false,
+    backgroundImage: null // For storing custom background image
 };
 
 // DOM Elements
@@ -29,6 +30,9 @@ export async function initializeApp() {
         // Initialize elements
         console.log('Initializing UI elements...');
         initializeElements();
+        
+        // Add background image button
+        addBackgroundImageButton();
         
         // Check if critical elements exist
         const criticalElements = [
@@ -86,6 +90,87 @@ export async function initializeApp() {
     } catch (error) {
         console.error('Error initializing app:', error);
         showErrorNotification('Failed to initialize the application: ' + error.message);
+    }
+}
+
+// Add background image button
+function addBackgroundImageButton() {
+    // Create the button
+    const bgButton = document.createElement('button');
+    bgButton.className = 'background-btn';
+    bgButton.id = 'background-btn';
+    bgButton.title = 'Change Background';
+    bgButton.innerHTML = '<i class="fas fa-image"></i>';
+    bgButton.style.position = 'fixed';
+    bgButton.style.bottom = '20px';
+    bgButton.style.right = '20px';
+    bgButton.style.zIndex = '1000';
+    bgButton.style.padding = '10px';
+    bgButton.style.borderRadius = '50%';
+    bgButton.style.backgroundColor = '#4A90E2';
+    bgButton.style.color = 'white';
+    bgButton.style.border = 'none';
+    bgButton.style.cursor = 'pointer';
+    bgButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+
+    // Add click event
+    bgButton.addEventListener('click', openBackgroundSelector);
+    
+    // Add to DOM
+    document.body.appendChild(bgButton);
+    
+    // Store in elements
+    elements.backgroundBtn = bgButton;
+}
+
+// Open background selector
+function openBackgroundSelector() {
+    // Create a file input element
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    
+    // Handle file selection
+    fileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const imageUrl = e.target.result;
+                setBackgroundImage(imageUrl);
+            };
+            reader.readAsDataURL(file);
+        }
+        // Remove the input element after selection
+        document.body.removeChild(fileInput);
+    });
+    
+    // Add to DOM and trigger click
+    document.body.appendChild(fileInput);
+    fileInput.click();
+}
+
+// Set background image
+function setBackgroundImage(imageUrl) {
+    // Store in state
+    state.backgroundImage = imageUrl;
+    
+    // Apply to background overlay
+    const overlay = document.querySelector('.background-overlay');
+    if (overlay) {
+        overlay.style.backgroundImage = `url(${imageUrl})`;
+        overlay.style.backgroundSize = 'cover';
+        overlay.style.backgroundPosition = 'center';
+        overlay.style.opacity = '1';
+    }
+    
+    // Save in local storage if available
+    try {
+        localStorage.setItem('gicoBackgroundImage', imageUrl);
+        showNotification('Background updated successfully');
+    } catch (e) {
+        console.error('Error saving background to localStorage', e);
     }
 }
 
@@ -167,6 +252,16 @@ function initializeElements() {
     elements.conversationItemTemplate = document.getElementById('conversation-item-template');
     elements.messageTemplate = document.getElementById('message-template');
     elements.tagTemplate = document.getElementById('tag-template');
+    
+    // Try to load background from local storage
+    try {
+        const savedBg = localStorage.getItem('gicoBackgroundImage');
+        if (savedBg) {
+            setBackgroundImage(savedBg);
+        }
+    } catch (e) {
+        console.error('Error loading background from localStorage', e);
+    }
 }
 
 // Set up event listeners
@@ -857,7 +952,7 @@ function renderMessages(messagesToRender) {
             editMessage(message.id);
         });
         
-        // Add delete event listener
+        // Add delete event listener with confirmation dialog
         const deleteBtn = messageElement.querySelector('.delete-message-btn');
         deleteBtn.addEventListener('click', () => {
             deleteMessage(message.id);
@@ -1234,31 +1329,77 @@ async function editMessage(messageId) {
     }
 }
 
-// Delete message
+// Delete message with custom confirmation dialog
 async function deleteMessage(messageId) {
-    if (!confirm('Are you sure you want to delete this message?')) {
-        return;
-    }
+    // Create a custom dialog for confirmation
+    const dialogContainer = document.createElement('div');
+    dialogContainer.className = 'custom-dialog';
     
-    try {
-        // Delete message from database
-        await invoke('write_query', {
-            query: `
-                DELETE FROM Messages
-                WHERE id = ?
-            `,
-            parameters: [messageId.toString()]
-        });
-        
-        // Reload messages
-        await loadMessages(state.currentConversationId);
-        
-        // Refresh conversation list to update preview
-        await loadConversations();
-    } catch (error) {
-        console.error('Error deleting message:', error);
-        showErrorNotification('Failed to delete message');
-    }
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'custom-dialog-content';
+    
+    const header = document.createElement('h3');
+    header.textContent = 'Confirm Deletion';
+    
+    const confirmText = document.createElement('p');
+    confirmText.textContent = 'Are you sure you want to delete this message?';
+    confirmText.style.marginBottom = '20px';
+    
+    const buttons = document.createElement('div');
+    buttons.className = 'dialog-buttons';
+    
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = 'Delete';
+    deleteButton.style.backgroundColor = '#ff4d4d';
+    deleteButton.style.color = 'white';
+    deleteButton.addEventListener('click', async () => {
+        try {
+            // Delete message from database
+            await invoke('write_query', {
+                query: `
+                    DELETE FROM Messages
+                    WHERE id = ?
+                `,
+                parameters: [messageId.toString()]
+            });
+            
+            // Reload messages
+            await loadMessages(state.currentConversationId);
+            
+            // Refresh conversation list to update preview
+            await loadConversations();
+            
+            // Update the mind map as the conversation might change color
+            await loadConversationLinks();
+            MindMap.createMindMap(state.conversations, state.conversationLinks);
+            
+            // Close the dialog
+            document.body.removeChild(dialogContainer);
+            
+            // Show success notification
+            showNotification('Message deleted successfully');
+        } catch (error) {
+            logger.error('Error deleting message:', error);
+            showErrorNotification('Failed to delete message');
+            document.body.removeChild(dialogContainer);
+        }
+    });
+    
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => {
+        document.body.removeChild(dialogContainer);
+    });
+    
+    buttons.appendChild(deleteButton);
+    buttons.appendChild(cancelButton);
+    
+    dialogContent.appendChild(header);
+    dialogContent.appendChild(confirmText);
+    dialogContent.appendChild(buttons);
+    
+    dialogContainer.appendChild(dialogContent);
+    document.body.appendChild(dialogContainer);
 }
 
 // Search conversations

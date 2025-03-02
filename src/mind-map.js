@@ -127,7 +127,29 @@ function renderMindMap(nodes, links) {
         .attr('r', 40)
         .attr('fill', d => d.type === 'tag' ? 'rgba(80, 227, 194, 0.7)' : 'rgba(74, 144, 226, 0.7)')
         .attr('stroke', 'white')
-        .attr('stroke-width', 2);
+        .attr('stroke-width', 2)
+        .each(function(d) {
+            // If it's a conversation node, check for messages
+            if (d.type === 'conversation') {
+                const circle = d3.select(this);
+                // Check for messages
+                invoke('read_query', {
+                    query: `
+                        SELECT COUNT(*) as count 
+                        FROM Messages 
+                        WHERE conversation_id = ?
+                    `,
+                    parameters: [d.id.toString()]
+                }).then(result => {
+                    if (result && result[0] && result[0].count > 0) {
+                        // Has messages, set to purple
+                        circle.attr('fill', 'rgba(128, 0, 128, 0.7)');
+                    }
+                }).catch(err => {
+                    logger.error('Error checking for messages:', err);
+                });
+            }
+        });
     
     // Add text to nodes
     node.append('text')
