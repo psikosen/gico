@@ -43,9 +43,11 @@ let messages = [];
 let tags = [];
 let allTags = []; // Array to store all unique tags across conversations
 let conversationLinks = [];
+let tagLinks = []; // Array to store links between tags
 let simulation = null;
 let transform = { x: 0, y: 0, k: 1 }; // For zoom and pan
 let apiKey = ''; // Store the Gemini API key
+let showTagsOnly = false; // Toggle to show only tagged conversations
 
 // D3 Selections
 let svg = d3.select('#mind-map-svg');
@@ -98,6 +100,9 @@ async function initializeApp() {
         
         // Load all tags for filter
         await loadAllTags();
+        
+        // Load tag links
+        await loadTagLinks();
         
         // Initialize mind map
         initializeMindMap();
@@ -165,6 +170,20 @@ async function initializeDatabase() {
                     conversation_id INTEGER NOT NULL,
                     FOREIGN KEY (conversation_id) REFERENCES Conversations(id) ON DELETE CASCADE,
                     UNIQUE(name, conversation_id)
+                )
+            `
+        });
+        
+        // Create TagLinks table for relationships between tags
+        await invoke('create_table', {
+            query: `
+                CREATE TABLE IF NOT EXISTS TagLinks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_tag_id INTEGER NOT NULL,
+                    target_tag_id INTEGER NOT NULL,
+                    FOREIGN KEY (source_tag_id) REFERENCES Tags(id) ON DELETE CASCADE,
+                    FOREIGN KEY (target_tag_id) REFERENCES Tags(id) ON DELETE CASCADE,
+                    UNIQUE(source_tag_id, target_tag_id)
                 )
             `
         });
@@ -292,6 +311,28 @@ async function loadAllTags() {
     }
 }
 
+// Load Tag Links
+async function loadTagLinks() {
+    try {
+        const result = await invoke('read_query', {
+            query: `
+                SELECT tl.source_tag_id, tl.target_tag_id, 
+                       t1.name as source_tag_name, t2.name as target_tag_name,
+                       t1.conversation_id as source_conversation_id, 
+                       t2.conversation_id as target_conversation_id
+                FROM TagLinks tl
+                JOIN Tags t1 ON tl.source_tag_id = t1.id
+                JOIN Tags t2 ON tl.target_tag_id = t2.id
+            `
+        });
+        
+        tagLinks = result;
+    } catch (error) {
+        console.error('Error loading tag links:', error);
+        showErrorNotification('Failed to load tag links');
+    }
+}
+
 // Populate Tags Filter Dropdown
 function populateTagsFilter(tags) {
     // Clear current options except the first one
@@ -315,6 +356,8 @@ async function filterConversationsByTag() {
     if (!selectedTag) {
         // If no tag selected, show all conversations
         renderConversationList(conversations);
+        showTagsOnly = false;
+        initializeMindMap();
         return;
     }
     
@@ -337,11 +380,33 @@ async function filterConversationsByTag() {
             parameters: [selectedTag]
         });
         
+        // Update sidebar list
         renderConversationList(result);
+        
+        // Set flag to show only tagged conversations in mind map
+        showTagsOnly = true;
+        
+        // Update mind map to show only tagged conversations
+        filterMindMapByTag(selectedTag);
     } catch (error) {
         console.error('Error filtering conversations by tag:', error);
         showErrorNotification('Failed to filter conversations');
     }
+}
+
+// Filter Mind Map by Tag
+function filterMindMapByTag(tagName) {
+    // If no specific tag selected, show full map
+    if (!tagName) {
+        initializeMindMap();
+        return;
+    }
+    
+    // Find all conversations with the selected tag
+    const taggedConversationIds = new Set();
+    
+    // Re-initialize the mind map with filtered nodes
+    initializeMindMap(tagName);
 }
 
 // Load Conversation Links
@@ -362,7 +427,7 @@ async function loadConversationLinks() {
 }
 
 // Initialize Mind Map
-function initializeMindMap() {
+function initializeMindMap(filterTag) {
     if (conversations.length === 0) {
         showEmptyMapMessage();
         return;
@@ -371,21 +436,65 @@ function initializeMindMap() {
     // Clear previous content
     g.selectAll('*').remove();
     
+    // Filter conversations if a tag is selected
+    let filteredConversations = conversations;
+    let filteredLinks = conversationLinks;
+    
+    if (filterTag) {
+        // Get all conversation IDs with the selected tag
+        const taggedConversationIds = new Set();
+        
+        // If we have a tag filter, get all conversations with that tag
+        invoke('read_query', {
+            query: `
+                SELECT conversation_id
+                FROM Tags
+                WHERE name = ?
+            `,
+            parameters: [filterTag]
+        }).then(result => {
+            result.forEach(row => taggedConversationIds.add(row.conversation_id));
+            
+            // Filter conversations
+            filteredConversations = conversations.filter(conv => 
+                taggedConversationIds.has(conv.id)
+            );
+            
+            // Filter links to only include tagged conversations
+            filteredLinks = conversationLinks.filter(link => 
+                taggedConversationIds.has(link.source_conversation_id) && 
+                taggedConversationIds.has(link.target_conversation_id)
+            );
+            
+            // Update the mind map with filtered data
+            updateMindMapVisualization(filteredConversations, filteredLinks);
+        }).catch(error => {
+            console.error('Error filtering mind map by tag:', error);
+        });
+    } else {
+        // No filter, use all data
+        updateMindMapVisualization(filteredConversations, filteredLinks);
+    }
+}
+
+function updateMindMapVisualization(nodes, links) {
     // Prepare data for D3 force layout
-    const nodes = conversations.map(conv => ({
+    const nodeData = nodes.map(conv => ({
         id: conv.id,
         title: conv.title,
-        lastUpdate: conv.updated_at
+        lastUpdate: conv.updated_at,
+        type: 'conversation'
     }));
     
-    const links = conversationLinks.map(link => ({
+    const linkData = links.map(link => ({
         source: link.source_conversation_id,
-        target: link.target_conversation_id
+        target: link.target_conversation_id,
+        type: 'conversation'
     }));
     
     // Create force simulation
-    simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(150))
+    simulation = d3.forceSimulation(nodeData)
+        .force('link', d3.forceLink(linkData).id(d => d.id).distance(150))
         .force('charge', d3.forceManyBody().strength(-300))
         .force('center', d3.forceCenter(svg.node().clientWidth / 2, svg.node().clientHeight / 2))
         .force('collision', d3.forceCollide().radius(50))
@@ -393,7 +502,7 @@ function initializeMindMap() {
     
     // Create links
     const link = g.selectAll('.map-link')
-        .data(links)
+        .data(linkData)
         .enter()
         .append('line')
         .attr('class', 'map-link')
@@ -401,19 +510,22 @@ function initializeMindMap() {
     
     // Create nodes
     const node = g.selectAll('.map-node')
-        .data(nodes)
+        .data(nodeData)
         .enter()
         .append('g')
         .attr('class', 'map-node')
         .attr('data-id', d => d.id)
+        .attr('data-type', d => d.type)
         .on('click', (event, d) => {
-            openConversationDialog(d.id);
+            if (d.type === 'conversation') {
+                openConversationDialog(d.id);
+            }
         });
     
     // Add circles to nodes
     node.append('circle')
         .attr('r', 40)
-        .attr('fill', 'rgba(74, 144, 226, 0.7)')
+        .attr('fill', d => d.type === 'tag' ? 'rgba(80, 227, 194, 0.7)' : 'rgba(74, 144, 226, 0.7)')
         .attr('stroke', 'white')
         .attr('stroke-width', 2);
     
@@ -430,6 +542,46 @@ function initializeMindMap() {
         .on('start', dragstarted)
         .on('drag', dragged)
         .on('end', dragended));
+    
+    // Add tag indicators to conversations with tags
+    node.each(function(d) {
+        if (d.type === 'conversation') {
+            // Check if this conversation has tags
+            invoke('read_query', {
+                query: `
+                    SELECT COUNT(*) as tag_count
+                    FROM Tags
+                    WHERE conversation_id = ?
+                `,
+                parameters: [d.id.toString()]
+            }).then(result => {
+                if (result[0].tag_count > 0) {
+                    // Add a small tag indicator
+                    d3.select(this).append('circle')
+                        .attr('class', 'tag-indicator')
+                        .attr('r', 8)
+                        .attr('cx', 25)
+                        .attr('cy', -25)
+                        .attr('fill', 'rgba(80, 227, 194, 0.9)')
+                        .attr('stroke', 'white')
+                        .attr('stroke-width', 1);
+                    
+                    // Add tag count
+                    d3.select(this).append('text')
+                        .attr('class', 'tag-count')
+                        .attr('x', 25)
+                        .attr('y', -25)
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-size', '10px')
+                        .attr('fill', 'white')
+                        .text(result[0].tag_count);
+                }
+            }).catch(error => {
+                console.error('Error checking for tags:', error);
+            });
+        }
+    });
     
     // Tick function to update positions
     function ticked() {
@@ -494,6 +646,36 @@ function resetMapView() {
         zoom.transform,
         d3.zoomIdentity
     );
+}
+
+// Zoom to Node
+function zoomToNode(nodeId) {
+    const node = d3.select(`.map-node[data-id="${nodeId}"]`);
+    if (!node.empty()) {
+        // Get node's position data
+        const nodeData = node.datum();
+        if (nodeData && nodeData.x && nodeData.y) {
+            // Calculate center position of the viewport
+            const width = svg.node().clientWidth;
+            const height = svg.node().clientHeight;
+            
+            // Calculate new transform
+            const scale = 1.5; // Zoom level
+            const x = width / 2 - nodeData.x * scale;
+            const y = height / 2 - nodeData.y * scale;
+            
+            // Apply transform with transition
+            svg.transition().duration(750).call(
+                zoom.transform,
+                d3.zoomIdentity
+                    .translate(x, y)
+                    .scale(scale)
+            );
+            
+            // Update our saved transform
+            transform = { x, y, k: scale };
+        }
+    }
 }
 
 // Open Conversation Dialog
@@ -572,6 +754,9 @@ function highlightSelectedNode(conversationId) {
             )
             .classed('highlighted', true);
     });
+    
+    // Zoom to the selected node
+    zoomToNode(conversationId);
 }
 
 // Toggle Sidebar
@@ -610,13 +795,56 @@ function renderConversationList(conversationsToRender) {
             conversationItem.classList.add('active');
         }
         
+        // Add tag indicators to the conversation item
+        addTagIndicatorsToListItem(conversationItem, conversation.id);
+        
         // Add click event listener
         conversationItem.addEventListener('click', () => {
+            // First update sidebar selection
+            const currentActive = conversationList.querySelector('.conversation-item.active');
+            if (currentActive) {
+                currentActive.classList.remove('active');
+            }
+            conversationItem.classList.add('active');
+            
+            // Then open the dialog and zoom to node
             openConversationDialog(conversation.id);
         });
         
         conversationList.appendChild(conversationItem);
     });
+}
+
+// Add Tag Indicators to List Item
+async function addTagIndicatorsToListItem(item, conversationId) {
+    try {
+        const tagsResult = await invoke('read_query', {
+            query: `
+                SELECT name
+                FROM Tags
+                WHERE conversation_id = ?
+            `,
+            parameters: [conversationId.toString()]
+        });
+        
+        if (tagsResult.length > 0) {
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'item-tags-container';
+            
+            tagsResult.forEach(tag => {
+                const tagBadge = document.createElement('span');
+                tagBadge.className = 'item-tag';
+                tagBadge.textContent = tag.name;
+                tagsContainer.appendChild(tagBadge);
+            });
+            
+            // Insert the tags container after the title
+            const title = item.querySelector('.conversation-title');
+            title.insertAdjacentElement('afterend', tagsContainer);
+        }
+    } catch (error) {
+        console.error('Error loading tags for list item:', error);
+    }
 }
 
 // Format Date
@@ -972,9 +1200,14 @@ async function searchConversations() {
                     FROM Messages 
                     WHERE text LIKE ?
                 )
+                OR c.id IN (
+                    SELECT conversation_id
+                    FROM Tags
+                    WHERE name LIKE ?
+                )
                 ORDER BY c.updated_at DESC
             `,
-            parameters: [`%${searchTerm}%`, `%${searchTerm}%`]
+            parameters: [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`]
         });
         
         renderConversationList(result);
@@ -1117,7 +1350,7 @@ function showAddTagDialog() {
 // Add Tag
 async function addTag(tagName) {
     try {
-        await invoke('write_query', {
+        const result = await invoke('write_query', {
             query: `
                 INSERT OR IGNORE INTO Tags (name, conversation_id)
                 VALUES (?, ?)
@@ -1133,6 +1366,9 @@ async function addTag(tagName) {
         
         // Refresh mind map to reflect updated tags
         initializeMindMap();
+        
+        // Update the sidebar list to show tag indicators
+        await loadConversations();
     } catch (error) {
         console.error('Error adding tag:', error);
         showErrorNotification('Failed to add tag');
@@ -1155,6 +1391,12 @@ async function removeTag(tagId) {
         
         // Reload all tags for filter
         await loadAllTags();
+        
+        // Refresh mind map
+        initializeMindMap();
+        
+        // Update the sidebar list to show tag indicators
+        await loadConversations();
     } catch (error) {
         console.error('Error removing tag:', error);
         showErrorNotification('Failed to remove tag');
@@ -1168,10 +1410,55 @@ function showEditTitleDialog() {
         return;
     }
     
-    const newTitle = prompt('Enter a new title:', dialogTitle.textContent);
-    if (!newTitle || newTitle.trim() === '') return;
+    // Create a custom dialog for editing title
+    const dialogContainer = document.createElement('div');
+    dialogContainer.className = 'custom-dialog';
     
-    updateConversationTitle(newTitle.trim());
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'custom-dialog-content';
+    
+    const header = document.createElement('h3');
+    header.textContent = 'Edit Conversation Title';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = dialogTitle.textContent;
+    input.placeholder = 'Enter new title...';
+    
+    const buttons = document.createElement('div');
+    buttons.className = 'dialog-buttons';
+    
+    const saveButton = document.createElement('button');
+    saveButton.textContent = 'Save';
+    saveButton.addEventListener('click', () => {
+        const newTitle = input.value.trim();
+        if (newTitle) {
+            updateConversationTitle(newTitle);
+            document.body.removeChild(dialogContainer);
+        } else {
+            showWarningNotification('Title cannot be empty');
+        }
+    });
+    
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => {
+        document.body.removeChild(dialogContainer);
+    });
+    
+    buttons.appendChild(saveButton);
+    buttons.appendChild(cancelButton);
+    
+    dialogContent.appendChild(header);
+    dialogContent.appendChild(input);
+    dialogContent.appendChild(buttons);
+    
+    dialogContainer.appendChild(dialogContent);
+    document.body.appendChild(dialogContainer);
+    
+    // Focus and select the input field
+    input.focus();
+    input.select();
 }
 
 // Update Conversation Title
@@ -1244,6 +1531,19 @@ async function showLinkConversationDialog() {
             convItem.dataset.id = conv.id;
             convItem.textContent = conv.title;
             
+            // Check if already linked
+            const isLinked = conversationLinks.some(
+                link => (link.source_conversation_id == currentConversationId && 
+                         link.target_conversation_id == conv.id) ||
+                        (link.source_conversation_id == conv.id && 
+                         link.target_conversation_id == currentConversationId)
+            );
+            
+            if (isLinked) {
+                convItem.classList.add('selected');
+                convItem.innerHTML += ' <span class="already-linked">(Already Linked)</span>';
+            }
+            
             convItem.addEventListener('click', () => {
                 // Select/deselect conversation
                 convItem.classList.toggle('selected');
@@ -1259,11 +1559,11 @@ async function showLinkConversationDialog() {
         linkButton.textContent = 'Link Selected';
         linkButton.addEventListener('click', async () => {
             const selectedIds = Array.from(
-                conversationsList.querySelectorAll('.conversation-link-item.selected')
+                conversationsList.querySelectorAll('.conversation-link-item.selected:not(.already-linked)')
             ).map(item => parseInt(item.dataset.id));
             
             if (selectedIds.length === 0) {
-                showWarningNotification('Please select at least one conversation to link');
+                showWarningNotification('Please select at least one new conversation to link');
                 return;
             }
             

@@ -177,6 +177,13 @@ body {
     border-radius: 8px;
     color: var(--text-color);
     box-sizing: border-box;
+    height: 3rem; /* 2x higher */
+}
+
+.tags-filter select option {
+    background: rgba(0, 0, 0, 0.9);
+    color: var(--text-color);
+    padding: 0.5rem;
 }
 
 .conversation-list {
@@ -238,6 +245,22 @@ body {
     margin-bottom: 0.5rem;
 }
 
+/* Item tags container */
+.item-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.3rem 0;
+}
+
+.item-tag {
+    background: rgba(80, 227, 194, 0.3);
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .conversation-preview {
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.7);
@@ -251,6 +274,14 @@ body {
     color: rgba(255, 255, 255, 0.5);
     margin-top: 0.5rem;
     text-align: right;
+}
+
+/* Already linked indicator */
+.already-linked {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--secondary-color);
+    margin-left: 0.5rem;
 }
 
 /* Main Content Styles */
@@ -352,6 +383,16 @@ body {
     stroke: white;
     stroke-width: 3;
     animation: glow-pulse 2s infinite alternate;
+}
+
+/* Tag indicator on nodes */
+.tag-indicator {
+    filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.5));
+}
+
+.tag-count {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+    font-weight: bold;
 }
 
 .map-link {
@@ -503,6 +544,21 @@ body {
     border-radius: 8px;
     color: var(--text-color);
     box-sizing: border-box;
+}
+
+.settings-description {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.settings-description a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.settings-description a:hover {
+    text-decoration: underline;
 }
 
 .settings-buttons {
