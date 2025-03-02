@@ -31,9 +31,6 @@ export async function initializeApp() {
         console.log('Initializing UI elements...');
         initializeElements();
         
-        // Add background image button
-        addBackgroundImageButton();
-        
         // Check if critical elements exist
         const criticalElements = [
             { name: 'newConversationBtn', element: elements.newConversationBtn },
@@ -56,6 +53,24 @@ export async function initializeApp() {
         // Load API key
         console.log('Loading API key...');
         state.apiKey = await GeminiAPI.getApiKey();
+        
+        // Load background image from settings
+        console.log('Loading background image...');
+        try {
+            const backgroundResult = await invoke('read_query', {
+                query: `
+                    SELECT value FROM Settings WHERE key = 'background_image'
+                `
+            });
+            
+            if (backgroundResult.length > 0) {
+                state.backgroundImage = backgroundResult[0].value;
+                applyBackgroundImage(state.backgroundImage);
+                console.log('Background image loaded successfully');
+            }
+        } catch (error) {
+            console.error('Error loading background image:', error);
+        }
         
         // Initialize D3 mind map
         console.log('Initializing mind map...');
@@ -93,86 +108,7 @@ export async function initializeApp() {
     }
 }
 
-// Add background image button
-function addBackgroundImageButton() {
-    // Create the button
-    const bgButton = document.createElement('button');
-    bgButton.className = 'background-btn';
-    bgButton.id = 'background-btn';
-    bgButton.title = 'Change Background';
-    bgButton.innerHTML = '<i class="fas fa-image"></i>';
-    bgButton.style.position = 'fixed';
-    bgButton.style.bottom = '20px';
-    bgButton.style.right = '20px';
-    bgButton.style.zIndex = '1000';
-    bgButton.style.padding = '10px';
-    bgButton.style.borderRadius = '50%';
-    bgButton.style.backgroundColor = '#4A90E2';
-    bgButton.style.color = 'white';
-    bgButton.style.border = 'none';
-    bgButton.style.cursor = 'pointer';
-    bgButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
 
-    // Add click event
-    bgButton.addEventListener('click', openBackgroundSelector);
-    
-    // Add to DOM
-    document.body.appendChild(bgButton);
-    
-    // Store in elements
-    elements.backgroundBtn = bgButton;
-}
-
-// Open background selector
-function openBackgroundSelector() {
-    // Create a file input element
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'image/*';
-    fileInput.style.display = 'none';
-    
-    // Handle file selection
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const imageUrl = e.target.result;
-                setBackgroundImage(imageUrl);
-            };
-            reader.readAsDataURL(file);
-        }
-        // Remove the input element after selection
-        document.body.removeChild(fileInput);
-    });
-    
-    // Add to DOM and trigger click
-    document.body.appendChild(fileInput);
-    fileInput.click();
-}
-
-// Set background image
-function setBackgroundImage(imageUrl) {
-    // Store in state
-    state.backgroundImage = imageUrl;
-    
-    // Apply to background overlay
-    const overlay = document.querySelector('.background-overlay');
-    if (overlay) {
-        overlay.style.backgroundImage = `url(${imageUrl})`;
-        overlay.style.backgroundSize = 'cover';
-        overlay.style.backgroundPosition = 'center';
-        overlay.style.opacity = '1';
-    }
-    
-    // Save in local storage if available
-    try {
-        localStorage.setItem('gicoBackgroundImage', imageUrl);
-        showNotification('Background updated successfully');
-    } catch (e) {
-        console.error('Error saving background to localStorage', e);
-    }
-}
 
 // Verify that critical event listeners are properly attached
 function verifyEventListeners() {
@@ -247,21 +183,15 @@ function initializeElements() {
     elements.bookmarksDialog = document.getElementById('bookmarks-dialog');
     elements.closeBookmarksBtn = document.getElementById('close-bookmarks-btn');
     elements.bookmarksList = document.getElementById('bookmarks-list');
+    elements.backgroundPreview = document.getElementById('background-preview');
+    elements.uploadBackgroundBtn = document.getElementById('upload-background-btn');
+    elements.resetBackgroundBtn = document.getElementById('reset-background-btn');
+    elements.backgroundFileInput = document.getElementById('background-file-input');
     
     // Templates
     elements.conversationItemTemplate = document.getElementById('conversation-item-template');
     elements.messageTemplate = document.getElementById('message-template');
     elements.tagTemplate = document.getElementById('tag-template');
-    
-    // Try to load background from local storage
-    try {
-        const savedBg = localStorage.getItem('gicoBackgroundImage');
-        if (savedBg) {
-            setBackgroundImage(savedBg);
-        }
-    } catch (e) {
-        console.error('Error loading background from localStorage', e);
-    }
 }
 
 // Set up event listeners
@@ -281,6 +211,24 @@ function setupEventListeners() {
     elements.addTagBtn.addEventListener('click', showAddTagDialog);
     elements.editTitleBtn.addEventListener('click', showEditTitleDialog);
     
+    // Add delete conversation button event listener
+    elements.deleteConversationBtn = document.getElementById('delete-conversation-btn');
+    console.log('Delete button element:', elements.deleteConversationBtn);
+    if (elements.deleteConversationBtn) {
+        elements.deleteConversationBtn.addEventListener('click', () => {
+            console.log('Delete button clicked');
+            if (state.currentConversationId) {
+                console.log('Calling deleteConversation with ID:', state.currentConversationId);
+                deleteConversation(state.currentConversationId);
+            } else {
+                console.log('No current conversation ID found');
+            }
+        });
+        console.log('Delete button event listener attached');
+    } else {
+        console.error('Delete conversation button not found in the DOM');
+    }
+    
     // Mind map events
     elements.zoomInBtn.addEventListener('click', () => MindMap.zoomMap(1.2));
     elements.zoomOutBtn.addEventListener('click', () => MindMap.zoomMap(0.8));
@@ -291,6 +239,40 @@ function setupEventListeners() {
     if (elements.closeSettingsBtn) elements.closeSettingsBtn.addEventListener('click', hideSettingsDialog);
     if (elements.closeSettingsBtnAlt) elements.closeSettingsBtnAlt.addEventListener('click', hideSettingsDialog);
     if (elements.saveApiKeyBtn) elements.saveApiKeyBtn.addEventListener('click', saveApiKey);
+    
+    // Background image upload events
+    console.log('Upload background button element:', elements.uploadBackgroundBtn);
+    if (elements.uploadBackgroundBtn) {
+        elements.uploadBackgroundBtn.addEventListener('click', () => {
+            console.log('Upload background button clicked');
+            triggerBackgroundUpload();
+        });
+        console.log('Upload background button event listener attached');
+    } else {
+        console.error('Upload background button not found in the DOM');
+    }
+    
+    console.log('Reset background button element:', elements.resetBackgroundBtn);
+    if (elements.resetBackgroundBtn) {
+        elements.resetBackgroundBtn.addEventListener('click', () => {
+            console.log('Reset background button clicked');
+            resetBackgroundImage();
+        });
+        console.log('Reset background button event listener attached');
+    } else {
+        console.error('Reset background button not found in the DOM');
+    }
+    
+    console.log('Background file input element:', elements.backgroundFileInput);
+    if (elements.backgroundFileInput) {
+        elements.backgroundFileInput.addEventListener('change', (event) => {
+            console.log('Background file selected:', event.target.files[0]);
+            handleBackgroundFileSelect(event);
+        });
+        console.log('Background file input event listener attached');
+    } else {
+        console.error('Background file input not found in the DOM');
+    }
     
     // Bookmarks events
     if (elements.bookmarkBtn) elements.bookmarkBtn.addEventListener('click', toggleBookmarksDialog);
@@ -597,8 +579,20 @@ async function loadBookmarkedConversations() {
 
 // Show settings dialog
 function showSettingsDialog() {
+    // Set API key if available
     if (state.apiKey) {
         elements.apiKeyInput.value = state.apiKey;
+    }
+    
+    // Set background preview if available
+    if (elements.backgroundPreview) {
+        if (state.backgroundImage) {
+            elements.backgroundPreview.style.backgroundImage = `url(${state.backgroundImage})`;
+            elements.backgroundPreview.querySelector('.current-background').style.display = 'none';
+        } else {
+            elements.backgroundPreview.style.backgroundImage = 'none';
+            elements.backgroundPreview.querySelector('.current-background').style.display = 'flex';
+        }
     }
     
     elements.settingsDialog.classList.add('active');
@@ -626,6 +620,284 @@ async function saveApiKey() {
         hideSettingsDialog();
     } else {
         showErrorNotification('Failed to save API key');
+    }
+}
+
+// Trigger background image upload dialog
+function triggerBackgroundUpload() {
+    console.log('triggerBackgroundUpload function called');
+    if (elements.backgroundFileInput) {
+        console.log('Triggering file input click');
+        elements.backgroundFileInput.click();
+    } else {
+        console.error('Background file input element not available');
+    }
+}
+
+// Handle background file selection
+async function handleBackgroundFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const imageUrl = e.target.result;
+            
+            // Update preview
+            if (elements.backgroundPreview) {
+                elements.backgroundPreview.style.backgroundImage = `url(${imageUrl})`;
+                elements.backgroundPreview.querySelector('.current-background').style.display = 'none';
+            }
+            
+            // Save to state
+            state.backgroundImage = imageUrl;
+            
+            // Save to settings
+            try {
+                // Save to database using settings module
+                await invoke('write_query', {
+                    query: `
+                        INSERT OR REPLACE INTO Settings (key, value)
+                        VALUES ('background_image', ?)
+                    `,
+                    parameters: [imageUrl]
+                });
+                
+                // Apply to background
+                applyBackgroundImage(imageUrl);
+                
+                showNotification('Background image updated');
+            } catch (error) {
+                logger.error('Error saving background image:', error);
+                showErrorNotification('Failed to save background image');
+            }
+        };
+        reader.readAsDataURL(file);
+    } catch (error) {
+        logger.error('Error handling background file:', error);
+        showErrorNotification('Failed to process background image');
+    }
+}
+
+// Reset background image to default
+async function resetBackgroundImage() {
+    try {
+        // Remove from settings
+        await invoke('write_query', {
+            query: `
+                DELETE FROM Settings
+                WHERE key = 'background_image'
+            `
+        });
+        
+        // Reset state
+        state.backgroundImage = null;
+        
+        // Reset preview
+        if (elements.backgroundPreview) {
+            elements.backgroundPreview.style.backgroundImage = 'none';
+            elements.backgroundPreview.querySelector('.current-background').style.display = 'flex';
+        }
+        
+        // Reset actual background
+        const overlay = document.querySelector('.background-overlay');
+        if (overlay) {
+            overlay.style.backgroundImage = `url('/assets/background.jpg')`;
+        }
+        
+        showNotification('Background reset to default');
+    } catch (error) {
+        logger.error('Error resetting background:', error);
+        showErrorNotification('Failed to reset background');
+    }
+}
+
+// Apply background image to the app
+function applyBackgroundImage(imageUrl) {
+    if (!imageUrl) return;
+    
+    const overlay = document.querySelector('.background-overlay');
+    if (overlay) {
+        overlay.style.backgroundImage = `url(${imageUrl})`;
+        overlay.style.backgroundSize = 'cover';
+        overlay.style.backgroundPosition = 'center';
+    }
+}
+
+// Delete conversation with confirmation dialog
+async function deleteConversation(conversationId) {
+    try {
+        // Check if the conversation has messages
+        const messagesResult = await invoke('read_query', {
+            query: `
+                SELECT COUNT(*) as count 
+                FROM Messages 
+                WHERE conversation_id = ?
+            `,
+            parameters: [conversationId.toString()]
+        });
+        
+        const hasMessages = messagesResult[0].count > 0;
+        
+        // Create a custom dialog for confirmation
+        const dialogContainer = document.createElement('div');
+        dialogContainer.className = 'custom-dialog';
+        
+        const dialogContent = document.createElement('div');
+        dialogContent.className = 'custom-dialog-content';
+        
+        const header = document.createElement('h3');
+        header.textContent = 'Confirm Deletion';
+        
+        const confirmText = document.createElement('p');
+        if (hasMessages) {
+            confirmText.textContent = 'This node has a conversation. Do you want to delete only the conversation or the entire node?';
+        } else {
+            confirmText.textContent = 'Are you sure you want to delete this node?';
+        }
+        confirmText.style.marginBottom = '20px';
+        
+        const buttons = document.createElement('div');
+        buttons.className = 'dialog-buttons';
+        
+        if (hasMessages) {
+            // If it has messages, give options to delete just messages or the whole node
+            const deleteMessagesButton = document.createElement('button');
+            deleteMessagesButton.textContent = 'Delete Conversation Only';
+            deleteMessagesButton.style.backgroundColor = '#ff9f43';
+            deleteMessagesButton.style.color = 'white';
+            deleteMessagesButton.addEventListener('click', async () => {
+                try {
+                    // Delete only messages
+                    await invoke('write_query', {
+                        query: `
+                            DELETE FROM Messages
+                            WHERE conversation_id = ?
+                        `,
+                        parameters: [conversationId.toString()]
+                    });
+                    
+                    // Close the dialog
+                    document.body.removeChild(dialogContainer);
+                    
+                    // Close conversation dialog if it's open
+                    closeConversationDialog();
+                    
+                    // Refresh the conversation list and mind map
+                    await loadConversations();
+                    await loadConversationLinks();
+                    MindMap.createMindMap(state.conversations, state.conversationLinks);
+                    
+                    // Show success notification
+                    showNotification('Conversation deleted successfully');
+                } catch (error) {
+                    logger.error('Error deleting conversation:', error);
+                    showErrorNotification('Failed to delete conversation');
+                    document.body.removeChild(dialogContainer);
+                }
+            });
+            
+            const deleteNodeButton = document.createElement('button');
+            deleteNodeButton.textContent = 'Delete Entire Node';
+            deleteNodeButton.style.backgroundColor = '#ff4d4d';
+            deleteNodeButton.style.color = 'white';
+            deleteNodeButton.addEventListener('click', async () => {
+                try {
+                    // Delete the entire node (conversation and all related data will be deleted by cascade)
+                    await invoke('write_query', {
+                        query: `
+                            DELETE FROM Conversations
+                            WHERE id = ?
+                        `,
+                        parameters: [conversationId.toString()]
+                    });
+                    
+                    // Close the dialog
+                    document.body.removeChild(dialogContainer);
+                    
+                    // Close conversation dialog if it's open
+                    closeConversationDialog();
+                    
+                    // Refresh the conversation list and mind map
+                    await loadConversations();
+                    await loadConversationLinks();
+                    MindMap.createMindMap(state.conversations, state.conversationLinks);
+                    
+                    // Show success notification
+                    showNotification('Node deleted successfully');
+                } catch (error) {
+                    logger.error('Error deleting node:', error);
+                    showErrorNotification('Failed to delete node');
+                    document.body.removeChild(dialogContainer);
+                }
+            });
+            
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = 'Cancel';
+            cancelButton.addEventListener('click', () => {
+                document.body.removeChild(dialogContainer);
+            });
+            
+            buttons.appendChild(deleteMessagesButton);
+            buttons.appendChild(deleteNodeButton);
+            buttons.appendChild(cancelButton);
+        } else {
+            // If no messages, just confirm node deletion
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = 'Delete Node';
+            deleteButton.style.backgroundColor = '#ff4d4d';
+            deleteButton.style.color = 'white';
+            deleteButton.addEventListener('click', async () => {
+                try {
+                    // Delete the conversation (node)
+                    await invoke('write_query', {
+                        query: `
+                            DELETE FROM Conversations
+                            WHERE id = ?
+                        `,
+                        parameters: [conversationId.toString()]
+                    });
+                    
+                    // Close the dialog
+                    document.body.removeChild(dialogContainer);
+                    
+                    // Close conversation dialog if it's open
+                    closeConversationDialog();
+                    
+                    // Refresh the conversation list and mind map
+                    await loadConversations();
+                    await loadConversationLinks();
+                    MindMap.createMindMap(state.conversations, state.conversationLinks);
+                    
+                    // Show success notification
+                    showNotification('Node deleted successfully');
+                } catch (error) {
+                    logger.error('Error deleting node:', error);
+                    showErrorNotification('Failed to delete node');
+                    document.body.removeChild(dialogContainer);
+                }
+            });
+            
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = 'Cancel';
+            cancelButton.addEventListener('click', () => {
+                document.body.removeChild(dialogContainer);
+            });
+            
+            buttons.appendChild(deleteButton);
+            buttons.appendChild(cancelButton);
+        }
+        
+        dialogContent.appendChild(header);
+        dialogContent.appendChild(confirmText);
+        dialogContent.appendChild(buttons);
+        
+        dialogContainer.appendChild(dialogContent);
+        document.body.appendChild(dialogContainer);
+    } catch (error) {
+        logger.error('Error in delete conversation function:', error);
+        showErrorNotification('Error preparing delete operation');
     }
 }
 
@@ -882,6 +1154,23 @@ async function openConversationDialog(conversationId) {
             
             // Show dialog
             elements.conversationDialog.classList.add('active');
+            
+            // Make sure delete button works
+            const deleteBtn = document.getElementById('delete-conversation-btn');
+            if (deleteBtn) {
+                // Remove any existing event listeners
+                const newDeleteBtn = deleteBtn.cloneNode(true);
+                deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
+                
+                // Add fresh event listener
+                newDeleteBtn.addEventListener('click', () => {
+                    console.log('Delete button clicked from dialog');
+                    deleteConversation(conversationId);
+                });
+                
+                // Update elements reference
+                elements.deleteConversationBtn = newDeleteBtn;
+            }
         }
     } catch (error) {
         console.error('Error opening conversation dialog:', error);

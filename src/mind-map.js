@@ -105,6 +105,39 @@ function renderMindMap(nodes, links) {
         .force('collision', d3.forceCollide().radius(60)) // Increased radius for better spacing
         .on('tick', ticked);
     
+    // Add definitions for filters and effects
+    const defs = g.append('defs');
+    
+    // Add blur filter
+    const blurFilter = defs.append('filter')
+        .attr('id', 'blur')
+        .attr('x', '-50%')
+        .attr('y', '-50%')
+        .attr('width', '200%')
+        .attr('height', '200%');
+        
+    blurFilter.append('feGaussianBlur')
+        .attr('in', 'SourceGraphic')
+        .attr('stdDeviation', '3');
+    
+    // Add glow filter
+    const glowFilter = defs.append('filter')
+        .attr('id', 'glow')
+        .attr('x', '-50%')
+        .attr('y', '-50%')
+        .attr('width', '200%')
+        .attr('height', '200%');
+        
+    glowFilter.append('feGaussianBlur')
+        .attr('stdDeviation', '5')
+        .attr('result', 'coloredBlur');
+        
+    const feMerge = glowFilter.append('feMerge');
+    feMerge.append('feMergeNode')
+        .attr('in', 'coloredBlur');
+    feMerge.append('feMergeNode')
+        .attr('in', 'SourceGraphic');
+    
     // Create links
     const link = g.selectAll('.map-link')
         .data(linkData)
@@ -122,16 +155,26 @@ function renderMindMap(nodes, links) {
         .attr('data-id', d => d.id)
         .attr('data-type', d => d.type);
     
-    // Add circles to nodes
+    // Add shadow circle
     node.append('circle')
-        .attr('r', 40)
-        .attr('fill', d => d.type === 'tag' ? 'rgba(80, 227, 194, 0.7)' : 'rgba(74, 144, 226, 0.7)')
-        .attr('stroke', 'white')
-        .attr('stroke-width', 2)
+        .attr('r', 47)
+        .attr('fill', 'rgba(0, 0, 0, 0.3)')
+        .attr('cx', 2)
+        .attr('cy', 2)
+        .attr('class', 'node-shadow');
+    
+    // Add main glassmorphic circle
+    node.append('circle')
+        .attr('r', 45)
+        .attr('fill', d => d.type === 'tag' ? 'rgba(80, 227, 194, 0.3)' : 'rgba(74, 144, 226, 0.3)')
+        .attr('stroke', 'rgba(255, 255, 255, 0.2)')
+        .attr('stroke-width', 1)
+        .attr('class', 'glass-circle')
         .each(function(d) {
             // If it's a conversation node, check for messages
             if (d.type === 'conversation') {
                 const circle = d3.select(this);
+                console.log(`Checking for messages in conversation ${d.id}`);
                 // Check for messages
                 invoke('read_query', {
                     query: `
@@ -141,15 +184,26 @@ function renderMindMap(nodes, links) {
                     `,
                     parameters: [d.id.toString()]
                 }).then(result => {
+                    console.log(`Message count for conversation ${d.id}:`, result);
                     if (result && result[0] && result[0].count > 0) {
                         // Has messages, set to purple
-                        circle.attr('fill', 'rgba(128, 0, 128, 0.7)');
+                        console.log(`Setting conversation ${d.id} to purple (has ${result[0].count} messages)`);
+                        circle.attr('fill', 'rgba(128, 0, 128, 0.5)')
+                              .attr('filter', 'url(#glow)');
                     }
                 }).catch(err => {
                     logger.error('Error checking for messages:', err);
                 });
             }
         });
+    
+    // Add inner highlight
+    node.append('circle')
+        .attr('r', 42)
+        .attr('fill', 'none')
+        .attr('stroke', 'rgba(255, 255, 255, 0.1)')
+        .attr('stroke-width', 1)
+        .attr('class', 'inner-highlight');
     
     // Add text to nodes
     node.append('text')

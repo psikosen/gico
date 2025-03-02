@@ -6,6 +6,7 @@ import logger from './logger.js';
 class Settings {
     constructor() {
         this.apiKey = '';
+        this.backgroundImage = null;
         this.initialized = false;
     }
 
@@ -16,6 +17,7 @@ class Settings {
         try {
             logger.info('Initializing settings module');
             await this.loadApiKey();
+            await this.loadBackgroundImage();
             this.initialized = true;
             logger.info('Settings module initialized successfully');
         } catch (error) {
@@ -83,6 +85,63 @@ class Settings {
     // Check if API key is set
     hasApiKey() {
         return !!this.apiKey && this.apiKey.trim() !== '';
+    }
+
+    // Load background image from database
+    async loadBackgroundImage() {
+        try {
+            logger.info('Loading background image from settings');
+            
+            const result = await invoke('read_query', {
+                query: `
+                    SELECT value FROM Settings WHERE key = 'background_image'
+                `
+            });
+            
+            if (result.length > 0) {
+                this.backgroundImage = result[0].value;
+                logger.info('Background image loaded successfully');
+                return this.backgroundImage;
+            } else {
+                logger.info('No background image found in settings');
+                return null;
+            }
+        } catch (error) {
+            logger.error('Error loading background image:', error);
+            return null;
+        }
+    }
+
+    // Save background image to database
+    async saveBackgroundImage(imageUrl) {
+        if (!imageUrl) {
+            logger.warn('Attempted to save empty background image');
+            throw new Error('Background image cannot be empty');
+        }
+        
+        try {
+            logger.info('Saving new background image to settings');
+            
+            await invoke('write_query', {
+                query: `
+                    INSERT OR REPLACE INTO Settings (key, value)
+                    VALUES ('background_image', ?)
+                `,
+                parameters: [imageUrl]
+            });
+            
+            this.backgroundImage = imageUrl;
+            logger.info('Background image saved successfully');
+            return true;
+        } catch (error) {
+            logger.error('Error saving background image:', error);
+            throw error;
+        }
+    }
+
+    // Get background image
+    getBackgroundImage() {
+        return this.backgroundImage;
     }
 
     // For testing/validation

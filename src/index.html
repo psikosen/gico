@@ -194,6 +194,24 @@
             </div>
         </div>
         
+        <div class="settings-section">
+            <div class="settings-section-title">Appearance</div>
+            <div class="settings-input-group">
+                <label class="settings-label">Background Image</label>
+                <div class="background-preview" id="background-preview">
+                    <div class="current-background">
+                        <p>Current background</p>
+                    </div>
+                </div>
+                <div class="settings-buttons-inline">
+                    <button id="upload-background-btn" class="settings-btn settings-upload-btn">Upload New Image</button>
+                    <button id="reset-background-btn" class="settings-btn settings-cancel-btn">Reset to Default</button>
+                </div>
+                <input type="file" id="background-file-input" accept="image/*" style="display: none;">
+                <p class="settings-description">Upload a custom background image for your workspace.</p>
+            </div>
+        </div>
+        
         <div class="settings-buttons">
             <button id="save-api-key-btn" class="settings-btn settings-save-btn">Save Settings</button>
             <button id="close-settings-btn-alt" class="settings-btn settings-cancel-btn">Cancel</button>
