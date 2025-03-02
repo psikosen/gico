@@ -58,6 +58,9 @@
                     <button class="map-action-btn" id="add-convo-btn" title="Add Conversation">
                         <i class="fas fa-plus"></i>
                     </button>
+                    <button class="map-action-btn" id="settings-btn" title="Settings">
+                        <i class="fas fa-cog"></i>
+                    </button>
                     <button class="map-action-btn" id="zoom-in-btn" title="Zoom In">
                         <i class="fas fa-search-plus"></i>
                     </button>
@@ -117,6 +120,30 @@
                     <i class="fas fa-paper-plane"></i>
                 </button>
             </form>
+        </div>
+    </div>
+    
+    <!-- Settings Dialog -->
+    <div class="settings-dialog" id="settings-dialog">
+        <div class="settings-header">
+            <div class="settings-title">Settings</div>
+            <button class="dialog-action-btn" id="close-settings-btn" title="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="settings-section">
+            <div class="settings-section-title">API Configuration</div>
+            <div class="settings-input-group">
+                <label class="settings-label" for="api-key-input">Gemini API Key</label>
+                <input type="password" id="api-key-input" class="settings-input" placeholder="Enter your Gemini API key">
+                <p class="settings-description">Required for AI responses. Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</p>
+            </div>
+        </div>
+        
+        <div class="settings-buttons">
+            <button id="save-api-key-btn" class="settings-btn settings-save-btn">Save Settings</button>
+            <button id="close-settings-btn" class="settings-btn settings-cancel-btn">Cancel</button>
         </div>
     </div>
     

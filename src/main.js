@@ -24,6 +24,12 @@ const listViewBtn = document.getElementById('list-view-btn');
 const zoomInBtn = document.getElementById('zoom-in-btn');
 const zoomOutBtn = document.getElementById('zoom-out-btn');
 const resetViewBtn = document.getElementById('reset-view-btn');
+const tagsFilterSelect = document.getElementById('tags-filter-select');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsDialog = document.getElementById('settings-dialog');
+const closeSettingsBtn = document.getElementById('close-settings-btn');
+const apiKeyInput = document.getElementById('api-key-input');
+const saveApiKeyBtn = document.getElementById('save-api-key-btn');
 
 // Templates
 const conversationItemTemplate = document.getElementById('conversation-item-template');
@@ -35,9 +41,11 @@ let currentConversationId = null;
 let conversations = [];
 let messages = [];
 let tags = [];
+let allTags = []; // Array to store all unique tags across conversations
 let conversationLinks = [];
 let simulation = null;
 let transform = { x: 0, y: 0, k: 1 }; // For zoom and pan
+let apiKey = ''; // Store the Gemini API key
 
 // D3 Selections
 let svg = d3.select('#mind-map-svg');
@@ -58,6 +66,10 @@ listViewBtn.addEventListener('click', toggleSidebar);
 zoomInBtn.addEventListener('click', () => zoomMap(1.2));
 zoomOutBtn.addEventListener('click', () => zoomMap(0.8));
 resetViewBtn.addEventListener('click', resetMapView);
+tagsFilterSelect.addEventListener('change', filterConversationsByTag);
+if (settingsBtn) settingsBtn.addEventListener('click', showSettingsDialog);
+if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', hideSettingsDialog);
+if (saveApiKeyBtn) saveApiKeyBtn.addEventListener('click', saveApiKey);
 
 // Zoom behavior
 const zoom = d3.zoom()
@@ -75,11 +87,17 @@ async function initializeApp() {
         // Initialize database tables if they don't exist
         await initializeDatabase();
         
+        // Load API key from local storage if available
+        loadApiKey();
+        
         // Load conversations
         await loadConversations();
         
         // Load conversation links
         await loadConversationLinks();
+        
+        // Load all tags for filter
+        await loadAllTags();
         
         // Initialize mind map
         initializeMindMap();
@@ -151,11 +169,82 @@ async function initializeDatabase() {
             `
         });
         
+        // Create Settings table for API keys and preferences
+        await invoke('create_table', {
+            query: `
+                CREATE TABLE IF NOT EXISTS Settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            `
+        });
+        
         console.log('Database initialized successfully');
     } catch (error) {
         console.error('Error initializing database:', error);
         throw new Error('Failed to initialize database');
     }
+}
+
+// Load API Key
+async function loadApiKey() {
+    try {
+        const result = await invoke('read_query', {
+            query: `
+                SELECT value FROM Settings WHERE key = 'gemini_api_key'
+            `
+        });
+        
+        if (result.length > 0) {
+            apiKey = result[0].value;
+            console.log('API key loaded successfully');
+        } else {
+            console.log('No API key found in settings');
+        }
+    } catch (error) {
+        console.error('Error loading API key:', error);
+    }
+}
+
+// Save API Key
+async function saveApiKey() {
+    const newApiKey = apiKeyInput.value.trim();
+    
+    if (!newApiKey) {
+        showErrorNotification('API key cannot be empty');
+        return;
+    }
+    
+    try {
+        await invoke('write_query', {
+            query: `
+                INSERT OR REPLACE INTO Settings (key, value)
+                VALUES ('gemini_api_key', ?)
+            `,
+            parameters: [newApiKey]
+        });
+        
+        apiKey = newApiKey;
+        showNotification('API key saved successfully');
+        hideSettingsDialog();
+    } catch (error) {
+        console.error('Error saving API key:', error);
+        showErrorNotification('Failed to save API key');
+    }
+}
+
+// Show Settings Dialog
+function showSettingsDialog() {
+    if (apiKey) {
+        apiKeyInput.value = apiKey;
+    }
+    
+    settingsDialog.classList.add('active');
+}
+
+// Hide Settings Dialog
+function hideSettingsDialog() {
+    settingsDialog.classList.remove('active');
 }
 
 // Load Conversations
@@ -181,6 +270,77 @@ async function loadConversations() {
     } catch (error) {
         console.error('Error loading conversations:', error);
         showErrorNotification('Failed to load conversations');
+    }
+}
+
+// Load All Tags for Filter
+async function loadAllTags() {
+    try {
+        const result = await invoke('read_query', {
+            query: `
+                SELECT DISTINCT name
+                FROM Tags
+                ORDER BY name
+            `
+        });
+        
+        allTags = result.map(tag => tag.name);
+        populateTagsFilter(allTags);
+    } catch (error) {
+        console.error('Error loading all tags:', error);
+        showErrorNotification('Failed to load tags for filter');
+    }
+}
+
+// Populate Tags Filter Dropdown
+function populateTagsFilter(tags) {
+    // Clear current options except the first one
+    while (tagsFilterSelect.options.length > 1) {
+        tagsFilterSelect.remove(1);
+    }
+    
+    // Add tag options
+    tags.forEach(tag => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.textContent = tag;
+        tagsFilterSelect.appendChild(option);
+    });
+}
+
+// Filter Conversations by Tag
+async function filterConversationsByTag() {
+    const selectedTag = tagsFilterSelect.value;
+    
+    if (!selectedTag) {
+        // If no tag selected, show all conversations
+        renderConversationList(conversations);
+        return;
+    }
+    
+    try {
+        const result = await invoke('read_query', {
+            query: `
+                SELECT 
+                    c.id, 
+                    c.title, 
+                    c.created_at, 
+                    c.updated_at,
+                    (SELECT text FROM Messages 
+                     WHERE conversation_id = c.id 
+                     ORDER BY timestamp DESC LIMIT 1) as last_message
+                FROM Conversations c
+                JOIN Tags t ON c.id = t.conversation_id
+                WHERE t.name = ?
+                ORDER BY c.updated_at DESC
+            `,
+            parameters: [selectedTag]
+        });
+        
+        renderConversationList(result);
+    } catch (error) {
+        console.error('Error filtering conversations by tag:', error);
+        showErrorNotification('Failed to filter conversations');
     }
 }
 
@@ -383,6 +543,7 @@ function closeConversationDialog() {
     
     // Remove highlight from nodes
     d3.selectAll('.map-node').classed('selected', false);
+    d3.selectAll('.map-link').classed('highlighted', false);
 }
 
 // Highlight Selected Node
@@ -580,7 +741,11 @@ async function sendMessage(event) {
     }
     
     const messageText = messageInput.value.trim();
-    if (!messageText) return;
+    if (!messageText) {
+        // Show warning for empty message
+        showWarningNotification('Please enter a message before sending');
+        return;
+    }
     
     try {
         // Save user message to database
@@ -609,7 +774,7 @@ async function sendMessage(event) {
         // Reload messages
         await loadMessages(currentConversationId);
         
-        // Get AI response (Here, you'd typically call the Gemini API)
+        // Get AI response using Gemini API
         await getAIResponse(messageText);
         
         // Refresh conversation list and mind map
@@ -623,9 +788,24 @@ async function sendMessage(event) {
 // Get AI Response
 async function getAIResponse(userMessage) {
     try {
+        // Check if API key is available
+        if (!apiKey) {
+            showErrorNotification('Gemini API key is missing. Please set it in Settings.');
+            await invoke('write_query', {
+                query: `
+                    INSERT INTO Messages (conversation_id, sender, text, timestamp)
+                    VALUES (?, 'ai', ?, CURRENT_TIMESTAMP)
+                `,
+                parameters: [currentConversationId.toString(), "ERROR: Gemini API key is not set. Please configure it in the settings."]
+            });
+            
+            await loadMessages(currentConversationId);
+            return;
+        }
+        
         // In a real app, you'd call the Gemini API here
         // For now, we'll simulate a response
-        const simulatedResponse = `This is a simulated AI response to: "${userMessage}"`;
+        let simulatedResponse = `This is a simulated AI response to: "${userMessage}"`;
         
         // Add some delay to simulate API call
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -699,7 +879,10 @@ async function editMessage(messageId) {
         // Save button event listener
         saveButton.addEventListener('click', async () => {
             const newText = inputField.value.trim();
-            if (!newText) return;
+            if (!newText) {
+                showWarningNotification('Message cannot be empty');
+                return;
+            }
             
             try {
                 // Update message in database
@@ -844,6 +1027,7 @@ function renderTags(tagsToRender) {
             removeTag(tag.id);
         });
         
+        // Add tag element
         conversationTags.appendChild(tagElement);
     });
 }
@@ -855,10 +1039,79 @@ function showAddTagDialog() {
         return;
     }
     
-    const tagName = prompt('Enter a tag name:');
-    if (!tagName || tagName.trim() === '') return;
+    // Create a custom dialog for adding tags
+    const dialogContainer = document.createElement('div');
+    dialogContainer.className = 'custom-dialog';
     
-    addTag(tagName.trim());
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'custom-dialog-content';
+    
+    const header = document.createElement('h3');
+    header.textContent = 'Add Tag';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Enter tag name...';
+    
+    // Create options for existing tags to allow reuse
+    const existingTagsContainer = document.createElement('div');
+    existingTagsContainer.className = 'existing-tags';
+    
+    if (allTags.length > 0) {
+        const existingTagsLabel = document.createElement('p');
+        existingTagsLabel.textContent = 'Or select from existing tags:';
+        existingTagsContainer.appendChild(existingTagsLabel);
+        
+        const tagsList = document.createElement('div');
+        tagsList.className = 'tags-list';
+        
+        allTags.forEach(tagName => {
+            const tagItem = document.createElement('div');
+            tagItem.className = 'tag-item';
+            tagItem.textContent = tagName;
+            tagItem.addEventListener('click', () => {
+                input.value = tagName;
+            });
+            tagsList.appendChild(tagItem);
+        });
+        
+        existingTagsContainer.appendChild(tagsList);
+    }
+    
+    const buttons = document.createElement('div');
+    buttons.className = 'dialog-buttons';
+    
+    const addButton = document.createElement('button');
+    addButton.textContent = 'Add';
+    addButton.addEventListener('click', () => {
+        const tagName = input.value.trim();
+        if (tagName) {
+            addTag(tagName);
+            document.body.removeChild(dialogContainer);
+        } else {
+            showWarningNotification('Tag name cannot be empty');
+        }
+    });
+    
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => {
+        document.body.removeChild(dialogContainer);
+    });
+    
+    buttons.appendChild(addButton);
+    buttons.appendChild(cancelButton);
+    
+    dialogContent.appendChild(header);
+    dialogContent.appendChild(input);
+    dialogContent.appendChild(existingTagsContainer);
+    dialogContent.appendChild(buttons);
+    
+    dialogContainer.appendChild(dialogContent);
+    document.body.appendChild(dialogContainer);
+    
+    // Focus the input field
+    input.focus();
 }
 
 // Add Tag
@@ -872,8 +1125,14 @@ async function addTag(tagName) {
             parameters: [tagName, currentConversationId.toString()]
         });
         
-        // Reload tags
+        // Reload tags for current conversation
         await loadTags(currentConversationId);
+        
+        // Reload all tags for filter
+        await loadAllTags();
+        
+        // Refresh mind map to reflect updated tags
+        initializeMindMap();
     } catch (error) {
         console.error('Error adding tag:', error);
         showErrorNotification('Failed to add tag');
@@ -893,6 +1152,9 @@ async function removeTag(tagId) {
         
         // Reload tags
         await loadTags(currentConversationId);
+        
+        // Reload all tags for filter
+        await loadAllTags();
     } catch (error) {
         console.error('Error removing tag:', error);
         showErrorNotification('Failed to remove tag');
@@ -958,30 +1220,76 @@ async function showLinkConversationDialog() {
         });
         
         if (result.length === 0) {
-            alert('No other conversations available to link');
+            showNotification('No other conversations available to link');
             return;
         }
         
-        // Create options for the prompt
-        let options = '';
+        // Create a custom dialog for linking conversations
+        const dialogContainer = document.createElement('div');
+        dialogContainer.className = 'custom-dialog';
+        
+        const dialogContent = document.createElement('div');
+        dialogContent.className = 'custom-dialog-content';
+        
+        const header = document.createElement('h3');
+        header.textContent = 'Link to Conversation';
+        
+        const conversationsList = document.createElement('div');
+        conversationsList.className = 'conversations-list';
+        
+        // Add each conversation as a selectable item
         result.forEach(conv => {
-            options += `${conv.id}: ${conv.title}\n`;
+            const convItem = document.createElement('div');
+            convItem.className = 'conversation-link-item';
+            convItem.dataset.id = conv.id;
+            convItem.textContent = conv.title;
+            
+            convItem.addEventListener('click', () => {
+                // Select/deselect conversation
+                convItem.classList.toggle('selected');
+            });
+            
+            conversationsList.appendChild(convItem);
         });
         
-        const promptText = `Select a conversation ID to link to current conversation:\n\n${options}\n\nEnter the ID:`;
-        const targetConversationId = prompt(promptText);
+        const buttons = document.createElement('div');
+        buttons.className = 'dialog-buttons';
         
-        if (!targetConversationId) return;
+        const linkButton = document.createElement('button');
+        linkButton.textContent = 'Link Selected';
+        linkButton.addEventListener('click', async () => {
+            const selectedIds = Array.from(
+                conversationsList.querySelectorAll('.conversation-link-item.selected')
+            ).map(item => parseInt(item.dataset.id));
+            
+            if (selectedIds.length === 0) {
+                showWarningNotification('Please select at least one conversation to link');
+                return;
+            }
+            
+            // Create links for each selected conversation
+            for (const targetId of selectedIds) {
+                await linkConversations(currentConversationId, targetId);
+            }
+            
+            document.body.removeChild(dialogContainer);
+        });
         
-        // Check if the ID is valid
-        const isValid = result.some(conv => conv.id.toString() === targetConversationId);
-        if (!isValid) {
-            alert('Invalid conversation ID');
-            return;
-        }
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', () => {
+            document.body.removeChild(dialogContainer);
+        });
         
-        // Create link
-        await linkConversations(currentConversationId, parseInt(targetConversationId));
+        buttons.appendChild(linkButton);
+        buttons.appendChild(cancelButton);
+        
+        dialogContent.appendChild(header);
+        dialogContent.appendChild(conversationsList);
+        dialogContent.appendChild(buttons);
+        
+        dialogContainer.appendChild(dialogContent);
+        document.body.appendChild(dialogContainer);
     } catch (error) {
         console.error('Error showing link dialog:', error);
         showErrorNotification('Failed to show link dialog');
@@ -1019,13 +1327,57 @@ async function linkConversations(sourceId, targetId) {
 
 // Show Notification
 function showNotification(message) {
-    // In a real app, you'd implement a proper notification system
-    alert(message);
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'notification success';
+    notification.textContent = message;
+    
+    // Add to document
+    document.body.appendChild(notification);
+    
+    // Remove after timeout
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 500);
+    }, 3000);
 }
 
 // Show Error Notification
 function showErrorNotification(message) {
-    // In a real app, you'd implement a proper notification system
-    console.error(message);
-    alert(`Error: ${message}`);
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'notification error';
+    notification.textContent = message;
+    
+    // Add to document
+    document.body.appendChild(notification);
+    
+    // Remove after timeout
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 500);
+    }, 4000);
+}
+
+// Show Warning Notification
+function showWarningNotification(message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'notification warning';
+    notification.textContent = message;
+    
+    // Add to document
+    document.body.appendChild(notification);
+    
+    // Remove after timeout
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 500);
+    }, 3000);
 }
